@@ -1,0 +1,6 @@
+style = "sciml"
+
+margin = 100
+yas_style_nesting = true
+align_struct_field = true
+align_assignment = true
