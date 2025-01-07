@@ -1,5 +1,4 @@
-using DifferentialEquations, LinearAlgebra, BlockArrays, SparseArrays
-using Trixi
+using LinearAlgebra, BlockArrays, SparseArrays
 using JLD2
 using Plots
 using DoubleFloats
@@ -12,12 +11,15 @@ include("../src/SBPLite.jl")
 using .SBPLite
 include("plotting_helper.jl")
 
-order = 3
+order = 2
 # ref = TriRefElemOmega(order)
 # ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 6" => ref)
 
-ref = QuadRefElemGL(order)
-ref_elems_data = Dict{String, SBPLite.RefElemData}("Quadrilateral 4" => ref)
+ref = TriRefElemOmega(order)
+ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 6" => ref)
+
+ref = TriangleDiagELGL(order, 2 * order)
+ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 
 function identity(x)
     return x
@@ -33,10 +35,22 @@ grid = read_mesh(joinpath(@__DIR__, "2d_grid_periodic.msh"), ref_elems_data, ide
 # grid = read_mesh(joinpath(@__DIR__, "2d_grid_test.msh"), ref_elems_data, identity)
 grid = read_mesh(joinpath(@__DIR__, "2d_grid.msh"), ref_elems_data, identity)
 
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB_test8.msh"), ref_elems_data, identity)
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test8.msh"), ref_elems_data, identity)
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6.msh"), ref_elems_data, identity)
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test8.msh"), ref_elems_data, identity)
+
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6_testElementOrder1.msh"), ref_elems_data, identity)
+grid = read_mesh(joinpath(@__DIR__, "mesh/BurgersMeshSlab_001_test6.msh"), ref_elems_data, identity)
+
 include("test_Grid.jl")
 
 @save joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB0005.jld2") grid
-@save joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB0001.jld2") grid
+@save joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6.jld2") grid
+
+@load joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6.jld2") grid
+
+@save joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB00001.jld2") grid
 # @save joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB.jld2") grid
 @load joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB001.jld2") grid
 @load joinpath(@__DIR__, "mesh/BurgersMeshSlab_tB.jld2") grid
@@ -231,48 +245,48 @@ end
 
 
 
-function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false)
+function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false, tol = 1e-10)
     num_of_cells = n_cells(p[1])
     num_of_nodes = Int(length(p[1].xyz_q[1]))
-    all_U = ones(Float64, (num_of_pseudo_time_step+1, num_of_cells, num_of_nodes))
+    all_U = Array{Float64}(undef, num_of_pseudo_time_step+1, num_of_cells, num_of_nodes)
+    norms = Array{Float64}(undef, num_of_pseudo_time_step+1)
+    norm_diffs = Array{Float64}(undef, num_of_pseudo_time_step)
     all_U[1, :, :] = U0
-    diffs = zeros(num_of_pseudo_time_step)
+    norms[1] = L2_norm_of_RHS(p[1], U0)
+
 
     for pseudo_step in 1:num_of_pseudo_time_step
-        curr_U = deepcopy(all_U[pseudo_step, :, :, :])
+        curr_U = deepcopy(all_U[pseudo_step, :, :])
+        curr_norm = norms[pseudo_step]
 
-        # the if statement below is for furthur ease of implementation
-        if pseudo_step > 50
-            pseudo_dt = pseudo_dt
-            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
-            max_diff = maximum(abs.(next_U - curr_U))
-            println("Pseudo time step: $pseudo_step, Maximum difference: ", max_diff, "\n")
-            diffs[pseudo_step] = max_diff
-            all_U[pseudo_step+1, :, :, :] = next_U
+        next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
+        next_norm = L2_norm_of_RHS(p[1], next_U)
+        diff = abs(next_norm - curr_norm)
+        norm_diffs[pseudo_step] = diff
 
-        elseif pseudo_step > 150
-            pseudo_dt = pseudo_dt
-            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
-            max_diff = maximum(abs.(next_U - curr_U))
-            println("Pseudo time step: $pseudo_step, Maximum difference: ", max_diff, "\n")
-            diffs[pseudo_step] = max_diff
-            all_U[pseudo_step+1, :, :, :] = next_U
+        all_U[pseudo_step+1, :, :] = next_U
+        norms[pseudo_step+1] = next_norm
+
+
+        if diff < tol
+            println("\n Solution converged at pseudo time step: $(pseudo_step+1) \n")
+            display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion", ylims = [0, ]))
+            where_min = argmin(norms[1:pseudo_step])
+            return all_U[1:pseudo_step+1, :, :], norms[1:pseudo_step+1], all_U[where_min, :, :]
+        elseif curr_norm > 100 # check divergence 
+            println("Solution diverges at pseudo time step: $(pseudo_step+1) \n")
+            display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion"))
+            return all_U[1:pseudo_step, :, :], norms[1:pseudo_step], nothing
         else
-            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
-            max_diff = maximum(abs.(next_U - curr_U))
-            println("Pseudo time step: $pseudo_step, Maximum difference: ", max_diff, "\n")
-            diffs[pseudo_step] = max_diff
-            all_U[pseudo_step+1, :, :, :] = next_U
-        end
-
-        if max_diff < 1e-13
-            println("\n Solution converged at pseudo time step: $pseudo_step \n")
-            return all_U[1:pseudo_step, :, :], diffs[1:pseudo_step]
+            println("Pseudo time step: $pseudo_step, L2 norm diff: ", diff, "\n")
+            all_U[pseudo_step+1, :, :] = next_U
         end
 
     end
     print("\n Solution not converged, pseudo_dt = $pseudo_dt \n")
-    return all_U, diffs
+    display(plot(norm_diffs, label = "L2 norms diff between iteartion"))
+    where_min = argmin(norms[1:pseudo_step])
+    return all_U, norms, all_U[where_min, :, :]
 end
 
 
@@ -499,27 +513,28 @@ function RHS_test(u, p)
         normalγk, normalγv = @views grid.geometric_terms.N_f[ck][:, maskγk], grid.geometric_terms.N_f[cv][:, maskγv]
         Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
         Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
-        
-        if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
-            spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
-            spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
-        else
-            spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ (mysign.(Nxγk)) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
-            spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ (mysign.(Nxγv)) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)
-        end 
+
+    
+        # 替代布尔判断的代码
+        indicator = Nxγk .* (uk_face - uk_adj)
+        spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)) .* (indicator .< 0)
+        # spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6
+        # spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 ) .* (indicator .< 0) .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
+
+        # 同样的逻辑适用于 spatial_flux_v
+        # indicator_v = Nxγv .* (uv_face - uv_adj)
+        # spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + ((uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ mysign.(Nxγv) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)) .* (indicator_v .< 0)
 
         rk_spatial = grid.FAC[ck][lfγk] * Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
-        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_v)
+        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_k[Pk])
 
-        # temporal term
-        uk_face, uv_face = Rγk * uk, Rγv * uv
-        uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
 
         rk_temporal = grid.FAC[ck][lfγk] * Diagonal(Ntγk) * (0.5 .* uk_face .- 0.5 .* uk_adj)
         rv_temporal = grid.FAC[cv][lfγv] * Diagonal(Ntγv) * (0.5 .* uv_face .- 0.5 .* uv_adj)
+
         
-        result[ck, :] += (rk_spatial .+ rk_temporal )
-        result[cv, :] += (rv_spatial .+ rv_temporal )
+        result[ck, :] += ( rk_spatial .+ rk_temporal )
+        result[cv, :] += ( rv_spatial .+ rv_temporal )
     end
 
     # for interface in interfaces_align_shock 
@@ -532,7 +547,7 @@ function RHS_test(u, p)
 
     #     uk, uv = u[ck, :], u[cv, :]
     #     uk_face, uv_face = Rγk * uk, Rγv * uv
-    #     uk_adj, uv_adj = uv_face, uk_face # 对于 quad element, 这个是不需要的。see test_Grid for details
+    #     uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
 
 
     #     # normal vector of physical element
@@ -546,20 +561,17 @@ function RHS_test(u, p)
     #     rk_spatial = grid.FAC[ck][lfγk] * Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
     #     rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_v)
 
-    #     # temporal term
-    #     uk_face, uv_face = Rγk * uk, Rγv * uv
-    #     uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
-
     #     rk_temporal = grid.FAC[ck][lfγk] * Diagonal(Ntγk) * (0.5 .* uk_face .- 0.5 .* uk_adj)
     #     rv_temporal = grid.FAC[cv][lfγv] * Diagonal(Ntγv) * (0.5 .* uv_face .- 0.5 .* uv_adj)
+
         
-    #     result[ck, :] += (rk_spatial .+ rk_temporal )
-    #     result[cv, :] += (rv_spatial .+ rv_temporal )
+    #     result[ck, :] += ( rk_spatial .+ rk_temporal )
+    #     result[cv, :] += ( rv_spatial .+ rv_temporal )
     # end
 
 
-    # for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), get_face_set(grid, "BOTTOM_INFLOW_2"))
-    for (cell_id, face_id) in get_face_set(grid, "BOTTOM_INFLOW_1")
+    for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), get_face_set(grid, "BOTTOM_INFLOW_2"))
+    # for (cell_id, face_id) in get_face_set(grid, "BOTTOM_INFLOW_1")
         # cell = get_cells(grid, cell_id)
         # elem = get_ref_elem_data(grid, cell)
         ref = grid.cells[cell_id].ref_data[]
@@ -601,7 +613,7 @@ function L2_norm_of_RHS(grid, u)
 end
 
 
-zlimit = [-1.1, 1.1]
+zlimit = [-1.25, 1.25]
 nodes_per_cell = length(grid.xyz_q[1])
 
 
@@ -610,8 +622,9 @@ p1 = get_set_up(grid, slab = 1)
 IC1 = p1[end]
 
 U0 = initial_guess(grid)
-@time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.0001, num_of_pseudo_time_step = 2000, diss = true, test = true)
-gif(observe_iteration(grid, all_U[1:10:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
+# @time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 240, diss = true, test = true)
+@time all_U, norms, sol_U = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 1000, diss = true, test = true, tol = 1e-12)
+gif(observe_iteration(grid, all_U[1:2:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
 u1 = all_U[end, :, :]
 observe_numerical_sol(grid, u1, zlimit, show_true_sol = false)
 
@@ -632,11 +645,66 @@ for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), get_face_
 end
 p
 
-@time all_U2, diffs2 = space_time_solve(u1, p2, pseudo_dt = 0.0001, num_of_pseudo_time_step = 2500, diss = true, test = true)
-gif(observe_iteration(grid, all_U2[1:50:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
-plot([L2_norm_of_RHS(grid, RHS_diss_periodic(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ], label = "", xlabel = "Pseudo time step", ylabel = "Max abs RHS", title = "Convergence of the numerical solution")
+@time all_U2, diffs2, sol_U = space_time_solve(u1, p2, pseudo_dt = 0.001, num_of_pseudo_time_step = 5000, diss = true, test = true)
+gif(observe_iteration(grid, all_U2[1:10:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
+u2 = all_U2[end, :, :]
+observe_numerical_sol(grid, u2, zlimit, show_true_sol = false)
+#---------------------- slab 3 ---------------------- #
+p3 = get_set_up(grid, u = u2, slab = 3)
+IC3 = p3[end]
 
-observe_numerical_sol(grid, all_U2[end, :, :], zlimit, show_true_sol = false)
+# check if the IC2 is correct
+p = scatter()
+for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), get_face_set(grid, "BOTTOM_INFLOW_2"))
+    coord = grid.xyz_q[cell_id]
+    R = grid.cells[cell_id].ref_data[].R[face_id]
+    coords = R * coord
+    x_coords = map(x -> x[1], coords)
+    scatter!(p, x_coords, IC3[(cell_id, face_id)], label = "", color = "red")
+    scatter!(p, x_coords, IC1[(cell_id, face_id)], label = "", color = "blue")
+
+end
+p
+
+@time all_U3, diffs3, sol_U3= space_time_solve(u2, p3, pseudo_dt = 0.001, num_of_pseudo_time_step = 2000, diss = true, test = true)
+gr()
+gif(observe_iteration(grid, all_U3[1:25:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
+
+using Plots
+plotlyjs()  # 设置后端为 PlotlyJS
+
+# 你的原始代码
+p = scatter()
+for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), 
+                               get_face_set(grid, "BOTTOM_INFLOW_2"))
+    coord = grid.xyz_q[cell_id]
+    R = grid.cells[cell_id].ref_data[].R[face_id]
+    coords = R * coord
+    x_coords = map(x -> x[1], coords)
+    scatter!(p, x_coords, IC3[(cell_id, face_id)], label = "", color = "red")
+    scatter!(p, x_coords, IC1[(cell_id, face_id)], label = "", color = "blue")
+end
+p
+
+
+
+
+
+
+plot([L2_norm_of_RHS(grid, RHS_test(all_U3[i, :, :], p2)) for i in 1:length(all_U3[:,1,1]) ], label = "", xlabel = "Pseudo time step", ylabel = "Max abs RHS", title = "Convergence of the numerical solution")
+
+where_UO = argmin([L2_norm_of_RHS(grid, RHS_test(all_U3[i, :, :], p2)) for i in 1:length(all_U3[:,1,1]) ])
+U0_for_solver = all_U3[where_UO, :, :]
+observe_numerical_sol(grid, U0_for_solver, zlimit, show_true_sol = false)
+
+#---------------------- observe numerical solution ---------------------- #
+get_face_set(grid, "SHOCK")
+
+scatter3d(map(x -> x[1], grid.xyz_q[5]), map(x -> x[2], grid.xyz_q[5]), U0_for_solver[5, :], label = "", title = "Numerical solution", xlabel = "x", ylabel = "y", zlabel = "u", xlim = [0, 0.5], ylim = [0, 1/(4* π)],zlim = [-1.5, 1.5], size = (800, 800), markersize = 1.5)
+scatter3d(map(x -> x[1], grid.xyz_q[23]), map(x -> x[2], grid.xyz_q[23]), U0_for_solver[23, :], label = "", title = "Numerical solution", xlabel = "x", ylabel = "y", zlabel = "u", xlim = [0, 0.5], ylim = [0, 1/(4* π)],zlim =  [-1.5, 1.5], size = (800, 800), markersize = 1.5)
+scatter3d(map(x -> x[1], grid.xyz_q[2]), map(x -> x[2], grid.xyz_q[2]), U0_for_solver[2, :], label = "", title = "Numerical solution", xlabel = "x", ylabel = "y", zlabel = "u", xlim = [0, 0.5], ylim = [0, 1/(4* π)],zlim =  [-1.5, 1.5], size = (800, 800), markersize = 1.5)
+
+plot_cell(grid, 27)
 
 #---------------------- solver part ---------------------- #
 # No dissipation
@@ -678,27 +746,18 @@ function RHS_forSolver_withoutdiss(du, u, p)
         Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
         Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
         
-        # if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
-        #     spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
-        #     spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
-        # else
-        #     spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6
-        #     spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 
-        # end 
+
         # 替代布尔判断的代码
         indicator = Nxγk .* (uk_face - uk_adj)
         spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .* (indicator .< 0)
 
         # 同样的逻辑适用于 spatial_flux_v
-        indicator_v = Nxγv .* (uv_face - uv_adj)
-        spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .* (indicator_v .< 0)
+        # indicator_v = Nxγv .* (uv_face - uv_adj)
+        # spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .* (indicator_v .< 0)
 
         rk_spatial = grid.FAC[ck][lfγk] * Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
-        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_v)
+        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_k[Pk])
 
-        # temporal term
-        uk_face, uv_face = Rγk * uk, Rγv * uv
-        uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
 
         rk_temporal = grid.FAC[ck][lfγk] * Diagonal(Ntγk) * (0.5 .* uk_face .- 0.5 .* uk_adj)
         rv_temporal = grid.FAC[cv][lfγv] * Diagonal(Ntγv) * (0.5 .* uv_face .- 0.5 .* uv_adj)
@@ -786,23 +845,16 @@ function RHS_forSolver_diss(du, u, p)
         Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
         Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
         
-        # if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
-        #     spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
-        #     spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
-        # else
-            # spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ (mysign.(Nxγk)) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
-            # spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ (mysign.(Nxγv)) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)
-        # end 
         # 替代布尔判断的代码
         indicator = Nxγk .* (uk_face - uk_adj)
         spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)) .* (indicator .< 0)
 
         # 同样的逻辑适用于 spatial_flux_v
-        indicator_v = Nxγv .* (uv_face - uv_adj)
-        spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + ((uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ mysign.(Nxγv) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)) .* (indicator_v .< 0)
+        # indicator_v = Nxγv .* (uv_face - uv_adj)
+        # spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + ((uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ mysign.(Nxγv) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)) .* (indicator_v .< 0)
 
         rk_spatial = grid.FAC[ck][lfγk] * Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
-        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_v)
+        rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_k[Pk])
 
         # temporal term
         uk_face, uv_face = Rγk * uk, Rγv * uv
@@ -832,29 +884,45 @@ function RHS_forSolver_diss(du, u, p)
     return nothing
 end
 
-using Symbolics
-U0_for_solver = all_U2[argmin([L2_norm_of_RHS(grid, RHS_diss_periodic(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ]), :, :]
-f_diss! = (du, u) -> RHS_forSolver_diss(du, u, p2)
-du0_diss = similar(U0_for_solver)
-jac_sparsity_diss = Symbolics.jacobian_sparsity(f_diss!, du0_diss, U0_for_solver)
 
-# 生成稀疏雅可比结构（布尔矩阵）
-jac_sparsity_diss = Symbolics.jacobian_sparsity(f_diss!, du0_diss, U0_for_solver)
+using SparseConnectivityTracer, ADTypes
+using NonlinearSolve
+
+f! = (du, u) -> RHS_forSolver_diss(du, u, p3)
+du0 = similar(U0_for_solver)
+jac_sparsity_diss = ADTypes.jacobian_sparsity(f!, du0, U0_for_solver, TracerSparsityDetector())
+
 
 # 将 Bool 稀疏结构转换为数值类型的稀疏矩阵
-sparse_jacobian_diss = Float64.(sparse(jac_sparsity_diss))
+# sparse_jacobian_diss = Float64.(sparse(jac_sparsity_diss))
 
 # 使用 NonlinearFunction 和 jac_prototype
-nonlinearFunction_with_jac_diss = NonlinearFunction(RHS_forSolver_diss; jac_prototype=sparse_jacobian_diss)
-prob_with_jac_diss = NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver, p2; abstol=1e-10, reltol=1e-10)
+nonlinearFunction_with_jac_diss = NonlinearFunction(RHS_forSolver_diss; jac_prototype=jac_sparsity_diss)
+prob_with_jac_diss = NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver, p3; abstol=1e-10, reltol=1e-10)
 
 # 求解问题
-sol1_diss = solve(prob_with_jac_diss, NewtonRaphson(linsolve = KrylovJL_GMRES()), maxiters=10)
-sol1_diss_falseAutodiff = solve(prob_with_jac_diss, NewtonRaphson(; autodiff=false))
+@time sol1_diss = solve(prob_with_jac_diss, NewtonRaphson(linsolve = KrylovJL_GMRES()),show_trace = Val(true), maxiters = 1000)
+@time sol1_diss = solve(NonlinearProblem(nonlinearFunction_with_jac_diss, U0, p2; abstol=1e-10, reltol=1e-10), NewtonRaphson(linsolve = KrylovJL_GMRES()),show_trace = Val(true), maxiters = 1000)
+observe_numerical_sol(grid, sol1_diss.u, zlimit, show_true_sol = false)
 
-sol2_diss = solve(prob_with_jac_diss, LevenbergMarquardt())
-sol3_diss = solve(prob_with_jac_diss, TrustRegion())
-sol4_diss = solve(prob_with_jac_diss, PseudoTransient())
+
+@time sol1 = solve(prob_with_jac_diss, NewtonRaphson(),show_trace = Val(true))
+@time sol1_test = solve( NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver * 0, p2; abstol=1e-10, reltol=1e-10) , NewtonRaphson(),show_trace = Val(true), maxiters = 2000)
+@time sol1_diss_falseAutodiff = solve(prob_with_jac_diss, NewtonRaphson(; autodiff=false))
+
+@time sol2_diss = solve(prob_with_jac_diss, LevenbergMarquardt(), show_trace = Val(true),  maxiters = 5000)
+observe_numerical_sol(grid, sol2_diss.u, zlimit, show_true_sol = false)
+
+@time sol3_diss = solve(prob_with_jac_diss, TrustRegion(), show_trace = Val(true),  maxiters = 10000)
+observe_numerical_sol(grid, sol3_diss.u, zlimit, show_true_sol = false)
+
+@time sol4_diss = solve(prob_with_jac_diss, PseudoTransient(), show_trace = Val(true))
+observe_numerical_sol(grid, sol4_diss.u, zlimit, show_true_sol = false)
+
+@time sol4_diss_test = solve(NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver * 0, p2; abstol=1e-10, reltol=1e-10), PseudoTransient(), show_trace = Val(true))
+observe_numerical_sol(grid, sol4_diss_test.u, zlimit, show_true_sol = false)
+
+result_plot0_diss = observe_numerical_sol(grid, sol1_diss.u, zlimit, show_true_sol = false)
 
 result_plot1_diss = observe_numerical_sol(grid, sol1_diss_falseAutodiff.u, zlimit, show_true_sol = false)
 save(joinpath(@__DIR__, "numerical_result", "NewtonRaphson_tB,residual=$(round(L2_norm_of_RHS(grid,sol1_diss_falseAutodiff.resid), digits=2)),diss.png"), result_plot1_diss)
@@ -864,6 +932,7 @@ result_plot3_diss = observe_numerical_sol(grid, sol3_diss.u, zlimit, show_true_s
 save(joinpath(@__DIR__, "numerical_result", "TrustRegion_tB,residual=$(round(L2_norm_of_RHS(grid, sol3_diss.resid), digits=2)),diss.png"), result_plot3_diss)
 result_plot4_diss = observe_numerical_sol(grid, sol4_diss.u, zlimit, show_true_sol = false)
 save(joinpath(@__DIR__, "numerical_result", "PseudoTransient_tB,residual=$(round(L2_norm_of_RHS(grid, sol4_diss.resid), digits=2)),diss.png"), result_plot4_diss)
+
 
 #---------------------- developing new solver ---------------------- #
 
