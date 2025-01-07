@@ -19,6 +19,7 @@ ref = TriRefElemOmega(order)
 ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 6" => ref)
 
 ref = TriangleDiagELGL(order, 2 * order)
+ref = TriangleDiagELG(order, 2 * order)
 ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 
 function identity(x)
@@ -245,48 +246,95 @@ end
 
 
 
-function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false, tol = 1e-10)
+# function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false, tol = 1e-10)
+#     num_of_cells = n_cells(p[1])
+#     num_of_nodes = Int(length(p[1].xyz_q[1]))
+#     all_U = Array{Float64}(undef, num_of_pseudo_time_step+1, num_of_cells, num_of_nodes)
+#     norms = Array{Float64}(undef, num_of_pseudo_time_step+1)
+#     norm_diffs = Array{Float64}(undef, num_of_pseudo_time_step)
+#     all_U[1, :, :] = U0
+#     norms[1] = L2_norm_of_RHS(p[1], U0)
+
+
+#     for pseudo_step in 1:num_of_pseudo_time_step
+#         curr_U = deepcopy(all_U[pseudo_step, :, :])
+#         curr_norm = norms[pseudo_step]
+
+#         next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
+#         next_norm = L2_norm_of_RHS(p[1], next_U)
+#         diff = abs(next_norm - curr_norm)
+#         norm_diffs[pseudo_step] = diff
+
+#         all_U[pseudo_step+1, :, :] = next_U
+#         norms[pseudo_step+1] = next_norm
+
+
+#         if diff < tol
+#             println("\n Solution converged at pseudo time step: $(pseudo_step+1) \n")
+#             display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion", ylims = [0, ]))
+#             where_min = argmin(norms[1:pseudo_step])
+#             return all_U[1:pseudo_step+1, :, :], norms[1:pseudo_step+1], all_U[where_min, :, :]
+#         elseif curr_norm > 100 # check divergence 
+#             println("Solution diverges at pseudo time step: $(pseudo_step+1) \n")
+#             display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion"))
+#             return all_U[1:pseudo_step, :, :], norms[1:pseudo_step], nothing
+#         else
+#             println("Pseudo time step: $pseudo_step, L2 norm diff: ", diff, "\n")
+#             all_U[pseudo_step+1, :, :] = next_U
+#         end
+
+#     end
+#     print("\n Solution not converged, pseudo_dt = $pseudo_dt \n")
+#     display(plot(norm_diffs, label = "L2 norms diff between iteartion"))
+#     where_min = argmin(norms)
+#     return all_U, norms, all_U[where_min, :, :]
+# end
+
+function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false)
     num_of_cells = n_cells(p[1])
     num_of_nodes = Int(length(p[1].xyz_q[1]))
-    all_U = Array{Float64}(undef, num_of_pseudo_time_step+1, num_of_cells, num_of_nodes)
-    norms = Array{Float64}(undef, num_of_pseudo_time_step+1)
-    norm_diffs = Array{Float64}(undef, num_of_pseudo_time_step)
+    all_U = ones(Float64, (num_of_pseudo_time_step+1, num_of_cells, num_of_nodes))
     all_U[1, :, :] = U0
-    norms[1] = L2_norm_of_RHS(p[1], U0)
-
+    diffs = zeros(num_of_pseudo_time_step)
 
     for pseudo_step in 1:num_of_pseudo_time_step
-        curr_U = deepcopy(all_U[pseudo_step, :, :])
-        curr_norm = norms[pseudo_step]
+        curr_U = deepcopy(all_U[pseudo_step, :, :, :])
 
-        next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
-        next_norm = L2_norm_of_RHS(p[1], next_U)
-        diff = abs(next_norm - curr_norm)
-        norm_diffs[pseudo_step] = diff
+        # the if statement below is for furthur ease of implementation
+        if  pseudo_step == 1 || diffs[pseudo_step - 1] < 1e-5
+            # pseudo_dt = 0.0001
+            # print("dt = $pseudo_dt \n")
+            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
+            max_diff = maximum(abs.(next_U - curr_U))
+            println("step: $pseudo_step, τ = $pseudo_dt, Maximum difference: ", max_diff, "\n")
+            diffs[pseudo_step] = max_diff
+            all_U[pseudo_step+1, :, :, :] = next_U
 
-        all_U[pseudo_step+1, :, :] = next_U
-        norms[pseudo_step+1] = next_norm
-
-
-        if diff < tol
-            println("\n Solution converged at pseudo time step: $(pseudo_step+1) \n")
-            display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion", ylims = [0, ]))
-            where_min = argmin(norms[1:pseudo_step])
-            return all_U[1:pseudo_step+1, :, :], norms[1:pseudo_step+1], all_U[where_min, :, :]
-        elseif curr_norm > 100 # check divergence 
-            println("Solution diverges at pseudo time step: $(pseudo_step+1) \n")
-            display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion"))
-            return all_U[1:pseudo_step, :, :], norms[1:pseudo_step], nothing
+        elseif diffs[pseudo_step - 1] < 1e-6 && pseudo_step > 1
+            # pseudo_dt = 0.00005
+            # print("dt = $pseudo_dt \n")
+            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
+            max_diff = maximum(abs.(next_U - curr_U))
+            println("step: $pseudo_step, Maximum difference: ", max_diff, "\n")
+            diffs[pseudo_step] = max_diff
+            all_U[pseudo_step+1, :, :, :] = next_U
         else
-            println("Pseudo time step: $pseudo_step, L2 norm diff: ", diff, "\n")
-            all_U[pseudo_step+1, :, :] = next_U
+            next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
+            print("dt = $pseudo_dt \n")
+            max_diff = maximum(abs.(next_U - curr_U))
+            println("Pseudo time step: $pseudo_step, Maximum difference: ", max_diff, "\n")
+            diffs[pseudo_step] = max_diff
+            all_U[pseudo_step+1, :, :, :] = next_U
+        end
+
+        if max_diff < 1e-13
+            println("\n Solution converged at pseudo time step: $pseudo_step \n")
+            return all_U[1:pseudo_step, :, :], diffs[1:pseudo_step]
         end
 
     end
     print("\n Solution not converged, pseudo_dt = $pseudo_dt \n")
-    display(plot(norm_diffs, label = "L2 norms diff between iteartion"))
-    where_min = argmin(norms[1:pseudo_step])
-    return all_U, norms, all_U[where_min, :, :]
+    return all_U, diffs
 end
 
 
@@ -622,9 +670,9 @@ p1 = get_set_up(grid, slab = 1)
 IC1 = p1[end]
 
 U0 = initial_guess(grid)
-# @time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 240, diss = true, test = true)
-@time all_U, norms, sol_U = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 1000, diss = true, test = true, tol = 1e-12)
-gif(observe_iteration(grid, all_U[1:2:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
+@time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.0005, num_of_pseudo_time_step = 260, diss = true, test = true)
+@time all_U, norms, sol_U = space_time_solve(U0, p1, pseudo_dt = 0.0005, num_of_pseudo_time_step = 2000, diss = true, test = true, tol = 1e-12)
+gif(observe_iteration(grid, all_U[1:10:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
 u1 = all_U[end, :, :]
 observe_numerical_sol(grid, u1, zlimit, show_true_sol = false)
 

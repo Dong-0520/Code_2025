@@ -113,6 +113,7 @@ or
                 uk_face, uv_face = Rγk * uk, Rγv * uv
                 uk_adj, uv_adj = uv_face, uk_face
 """
+# dont need Pk, Pv
 @testset "check correctness of P1, P2 for periodicity functionality, check coordinate matchs for quadraleteral element" begin
     for i in 1:length(grid.face_interfaces)
         interface = grid.face_interfaces[i]
@@ -138,6 +139,7 @@ or
     end
 end
 
+# need Pk, Pv
 @testset "check correctness of P1, P2 for periodicity functionality, check coordinate matchs for quadraleteral element" begin
     for i in 1:length(grid.face_interfaces)
         interface = grid.face_interfaces[i]
