@@ -1,3 +1,6 @@
+
+include("tensor_product_sbp.jl")
+include("cg_triangle.jl")
 # Normal vectors for faces
 """
 Return matrix of normal vector at each face quadrature point for a given reference element.
@@ -70,8 +73,8 @@ function TetrahedronDiagE(degree::Integer, quad_degree::Int)
 end
 
 
-include("tensor_product_sbp.jl")
-function QuadRefElemGL(degree::Integer)
+
+function QuadRefElemGL_David(degree::Integer)
     @assert 1 <= degree <= 14
 
     ξ, H_face, Qξ1d, Dξ1d, Mξ1d, tLξ1d, tRξ1d = tensor_product_sbp.d1_gl_sbp(degree, false)
@@ -144,7 +147,7 @@ function QuadRefElemGL(degree::Integer)
     return RefElemData(degree, H, H_inv, H_face, D, (Qr, Qs), E, Qt, Qt_inv, R, f_mask, n_rst, rst, rst_q, rst_f)
 end
 
-function QuadRefElemGL_test(degree::Integer; boundary_nodes = true)
+function QuadRefElemGL_Hicken(degree::Integer; boundary_nodes = true)
     @assert 1 <= degree <= 4
     w, Q, R, rs, rs_quad, rs_face = getSbpOperatorsQuad2d(degree, boundary_nodes = boundary_nodes)
 
@@ -193,7 +196,100 @@ function QuadRefElemGL_test(degree::Integer; boundary_nodes = true)
 
     return RefElemData(degree, H, H_inv, H_face, D, (Qr, Qs), E, Qt, Qt_inv, R, f_mask, n_rst, rs, rs_quad, rst_f)
 
-end 
+end
+
+
+
+function QuadRefElemFromDiagETriangle(degree::Integer, quad_degree::Integer, vertices::Bool)
+    """
+    Create a reference operators on Quad based on the operators on Triangle
+    Graphically, the Quad is divided into two triangles, and the operators on the Quad are created by CG approach
+    """
+    xt, yt, Pt, Qxt, Qyt, Ext, Eyt = cg_triangle.triangle_from_Jesse(degree)
+    quadξ, quadη, quadH, quadQξ, quadQη, quadEξ, quadEη = cg_triangle.quad_from_triangle_SBP(size(xt)[1], xt, yt, Pt, Qxt, Qyt, Ext, Eyt)
+    num_of_nodes = size(quadξ)[1]
+    
+    rs = Matrix{Float64}(hcat(quadξ, quadη)')
+    rs_quad = deepcopy(rs)
+
+
+    Dr = inv(quadH)*quadQξ
+    Ds = inv(quadH)*quadQη
+    Dr = my_dropzeros(Dr)
+    Ds = my_dropzeros(Ds)
+    D = Dr, Ds
+
+    quadH = my_dropzeros(quadH)
+    quadHinv = inv(quadH)
+    quadHinv = my_dropzeros(quadHinv)
+
+
+    if degree == 1
+        node_id_on_south = [1,4,2]
+        node_id_on_east = [2,10,8]
+        node_id_on_north = [8,9,3]
+        node_id_on_west = [3,6,1]
+    elseif degree == 2
+        node_id_on_south = [1, 7, 8, 2]
+        node_id_on_east = [2, 19, 20, 13]
+        node_id_on_north = [13, 17, 18, 3]
+        node_id_on_west = [3, 11, 12, 1]
+    elseif degree == 3
+        node_id_on_south = [1, 13, 4, 14, 2]
+        node_id_on_east = [2, 30, 21, 31, 19]
+        node_id_on_north = [19, 28, 20, 29, 3]
+        node_id_on_west = [3, 17, 6, 18, 1]
+    elseif degree == 4
+        node_id_on_south = [1, 16, 10, 11, 17, 2]
+        node_id_on_east = [2, 41, 37, 38, 42, 28]
+        node_id_on_north = [28, 39, 35, 36, 40, 3]
+        node_id_on_west = [3, 20, 14, 15, 21, 1]
+    else
+        error("Not implemented yet")
+    end
+    H_face_west = Diagonal([abs(quadEξ[i, i]) for i in node_id_on_west])
+    H_face_east = Diagonal([abs(quadEξ[i, i]) for i in node_id_on_east])
+    H_face_south = Diagonal([abs(quadEη[i, i]) for i in node_id_on_south])
+    H_face_north = Diagonal([abs(quadEη[i, i]) for i in node_id_on_north])
+    @assert H_face_west ≈ H_face_east ≈ H_face_south ≈ H_face_north  "H_faces should be the same, check your ref elem data"
+    H_face = H_face_west
+
+    Qr, Qs = quadQξ, quadQη
+    Qr = my_dropzeros(Qr)
+    Qs = my_dropzeros(Qs)
+
+    E = my_dropzeros(Qr + Qr'), my_dropzeros(Qs + Qs')
+
+    Qt = [Qr' Qs']
+    Qt = my_dropzeros(Qt)
+    Qt_inv = pinv([Qr' Qs'])
+    Qt_inv = my_dropzeros(Qt_inv)
+
+    num_of_nodes_on_face = length(node_id_on_south)
+    R1 = zeros(num_of_nodes_on_face, num_of_nodes)
+    R2 = zeros(num_of_nodes_on_face, num_of_nodes)
+    R3 = zeros(num_of_nodes_on_face, num_of_nodes)
+    R4 = zeros(num_of_nodes_on_face, num_of_nodes)
+    for i in eachindex(node_id_on_east)
+        R1[i, node_id_on_south[i]] = 1
+        R2[i, node_id_on_east[i]] = 1
+        R3[i, node_id_on_north[i]] = 1
+        R4[i, node_id_on_west[i]] = 1
+    end
+    R = (R1, R2, R3, R4)
+
+    rst_f1 = rs[:, node_id_on_south]
+    rst_f2 = rs[:, node_id_on_east]
+    rst_f3 = rs[:, node_id_on_north]
+    rst_f4 = rs[:, node_id_on_west]
+    rst_f = hcat(rst_f1, rst_f2, rst_f3, rst_f4)
+
+    f_mask = [collect(((i-1) * num_of_nodes_on_face + 1):(i * num_of_nodes_on_face)) for i in 1:4]
+    n_rst = normals_face_quad(RefQuadrilateral, f_mask)
+
+    return RefElemData(degree, quadH, quadHinv, H_face, D, (Qr, Qs), E, Qt, Qt_inv, R, f_mask, n_rst, rs, rs_quad, rst_f)
+
+end
 
 
 function my_dropzeros(A::Matrix{T}) where {T <: Number}

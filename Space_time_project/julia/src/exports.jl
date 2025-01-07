@@ -8,7 +8,9 @@ export
       TetrahedronDiagE,
       normals_face_quad,
       face_coords,
-      QuadRefElemGL,
+      QuadRefElemGL_David,
+      QuadRefElemGL_Hicken,
+      QuadRefElemFromDiagETriangle,
 
 # ref_shapes
       AbstractRefShape,

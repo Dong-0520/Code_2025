@@ -1,20 +1,18 @@
-using DifferentialEquations, LinearAlgebra, BlockArrays, SparseArrays
-using Trixi
+using LinearAlgebra, BlockArrays, SparseArrays
 using JLD2
 using Plots
 using DoubleFloats
 using Logging
 using ProgressBars
-using LoopVectorization      
-using Statistics                                                                                                                                                                                                                                                                          
-
+using LoopVectorization
+using Statistics                                                                                                                                                                                                                                                          
 include("../src/SBPLite.jl")
 using .SBPLite
 include("plotting_helper.jl")
 
 order = 3
-ref_test = SBPLite.QuadRefElemGL_test(order)
-ref_elems_data = Dict{String, SBPLite.RefElemData}("Quadrilateral 4" => ref_test)
+ref = QuadRefElemGL_Hicken(order, boundary_nodes = true)
+ref_elems_data = Dict{String, SBPLite.RefElemData}("Quadrilateral 4" => ref)
 # ref = TriRefElemOmega(order)
 # ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 6" => ref)
 
@@ -25,8 +23,11 @@ function identity(x)
     return x
 end
 grid = read_mesh(joinpath(@__DIR__, "2d_grid_Quadtest1.msh"), ref_elems_data, identity)
+# @save joinpath(@__DIR__, "2d_grid_quad_periodic.jld2") grid
+@load joinpath(@__DIR__, "2d_grid_quad_periodic.jld2") grid
 
-@load joinpath(@__DIR__, "2d_grid_quad.jld2") grid
+
+# @load joinpath(@__DIR__, "2d_grid_quad.jld2") grid
 
 
 
@@ -461,8 +462,8 @@ function RHS_test(u, p)
     end
 
     # interface discretization
-    for interface in setdiff(interior_interfaces, interfaces_align_shock)
-    # for interface in interior_interfaces
+    # for interface in setdiff(interior_interfaces, interfaces_align_shock)
+    for interface in interior_interfaces
         ck, lfγk = interface.face_1
         cv, lfγv = interface.face_2
         # Pk, Pv = interface.P1, interface.P2
@@ -472,7 +473,7 @@ function RHS_test(u, p)
 
         uk, uv = u[ck, :], u[cv, :]
         uk_face, uv_face = Rγk * uk, Rγv * uv
-        # uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
+        # uk_adj, uv_adj = uv_face[Pv], uk_face[Pk] # 对于 quad element, 这个是不需要的。see test_Grid for details
         uk_adj, uv_adj = uv_face, uk_face
 
         # normal vector of physical element
@@ -481,20 +482,28 @@ function RHS_test(u, p)
         Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
         Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
         
-        if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
-            spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
-            spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
-        else
-            spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ (mysign.(Nxγk)) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
-            spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ (mysign.(Nxγv)) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)
-        end 
+        # if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
+        #     spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
+        #     spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
+        # else
+        #     spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ (mysign.(Nxγk)) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
+        #     spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ (mysign.(Nxγv)) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)
+        # end 
+        # 替代布尔判断的代码
+        indicator = Nxγk .* (uk_face - uk_adj)
+        spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)) .* (indicator .< 0)
+
+        # 同样的逻辑适用于 spatial_flux_v
+        indicator_v = Nxγv .* (uv_face - uv_adj)
+        spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + ((uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ mysign.(Nxγv) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)) .* (indicator_v .< 0)
+
 
         rk_spatial = grid.FAC[ck][lfγk] * Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
         rv_spatial = grid.FAC[cv][lfγv] * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_v)
 
         # temporal term
         uk_face, uv_face = Rγk * uk, Rγv * uv
-        # uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
+        # uk_adj, uv_adj = uv_face[Pv], uk_face[Pk] # 对于 quad element, 这个是不需要的。see test_Grid for details
         uk_adj, uv_adj = uv_face, uk_face
 
         rk_temporal = grid.FAC[ck][lfγk] * Diagonal(Ntγk) * (0.5 .* uk_face .- 0.5 .* uk_adj)
@@ -507,7 +516,7 @@ function RHS_test(u, p)
     # for interface in interfaces_align_shock 
     #     ck, lfγk = interface.face_1
     #     cv, lfγv = interface.face_2
-    #     Pk, Pv = interface.P1, interface.P2
+    #     # Pk, Pv = interface.P1, interface.P2
     #     refk = grid.cells[ck].ref_data[]
     #     refv = grid.cells[cv].ref_data[]
     #     Rγk, Rγv = Matrix(refk.R[lfγk]), Matrix(refv.R[lfγv])
@@ -585,8 +594,8 @@ p1 = get_set_up(grid, slab = 1)
 IC1 = p1[end]
 
 U0 = initial_guess(grid)
-@time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 10000, diss = true, test = true)
-gif(observe_iteration(grid, all_U[1:50:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
+@time all_U, diffs = space_time_solve(U0, p1, pseudo_dt = 0.001, num_of_pseudo_time_step = 5000, diss = true, test = true)
+gif(observe_iteration(grid, all_U[1:100:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
 u1 = all_U[end, :, :]
 observe_numerical_sol(grid, u1, zlimit, show_true_sol = false)
 
@@ -608,7 +617,7 @@ for (cell_id, face_id) in union(get_face_set(grid, "BOTTOM_INFLOW_1"), get_face_
 end
 p
 
-@time all_U2, diffs2 = space_time_solve(u1, p2, pseudo_dt = 0.0005, num_of_pseudo_time_step = 3000, diss = true, test = true)
+@time all_U2, diffs2 = space_time_solve(u1, p2, pseudo_dt = 0.0005, num_of_pseudo_time_step = 5000, diss = true, test = true)
 gif(observe_iteration(grid, all_U2[1:50:end, :, :], zlimit, show_true_sol = false), joinpath(@__DIR__, "numerical_test_discts.gif"), fps=5)
 plot([L2_norm_of_RHS(grid, RHS_test(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ], label = "", xlabel = "Pseudo time step", ylabel = "Max abs RHS", title = "Convergence of the numerical solution")
 
@@ -701,7 +710,7 @@ function RHS_forSolver_withoutdiss(du, u, p)
 end
 
 using BenchmarkTools
-U0_for_solver = all_U2[argmin([L2_norm_of_RHS(grid, RHS_diss_periodic(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ]), :, :]
+U0_for_solver = all_U2[argmin([L2_norm_of_RHS(grid, RHS_test(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ]), :, :]
 prob = NonlinearProblem(RHS_forSolver_withoutdiss, U0_for_solver, p2)
 @benchmark sol1 = solve(prob, NewtonRaphson(); maxiters=5000, nlsolve_kwargs=(autodiff=false,))
 @benchmark sol2 = solve(prob, LevenbergMarquardt(), abstol=1e-8, reltol=1e-8, maxiters=5000)
@@ -761,14 +770,7 @@ function RHS_forSolver_diss(du, u, p)
         normalγk, normalγv = @views grid.geometric_terms.N_f[ck][:, maskγk], grid.geometric_terms.N_f[cv][:, maskγv]
         Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
         Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
-        
-        # if all( x -> x >= 0, Nxγk .* (uk_face - uk_adj))
-        #     spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4
-        #     spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4
-        # else
-            # spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ (mysign.(Nxγk)) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
-            # spatial_flux_v = (uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ (mysign.(Nxγv)) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)
-        # end 
+
         # 替代布尔判断的代码
         indicator = Nxγk .* (uk_face - uk_adj)
         spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)) .* (indicator .< 0)
@@ -809,26 +811,26 @@ function RHS_forSolver_diss(du, u, p)
     return nothing
 end
 
-using Symbolics
-min_resid = argmin([L2_norm_of_RHS(grid, RHS_test(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ])
-U0_for_solver = all_U2[min_resid, :, :]
-f_diss! = (du, u) -> RHS_forSolver_diss(du, u, p2)
-du0_diss = similar(U0_for_solver)
-jac_sparsity_diss = Symbolics.jacobian_sparsity(f_diss!, du0_diss, U0_for_solver)
+using SparseConnectivityTracer, ADTypes
+using NonlinearSolve
+U0_for_solver = all_U2[argmin([L2_norm_of_RHS(grid, RHS_test(all_U2[i, :, :], p2)) for i in 1:length(all_U2[:,1,1]) ]), :, :]
+f! = (du, u) -> RHS_forSolver_diss(du, u, p2)
+du0 = similar(U0_for_solver)
+jac_sparsity_diss = ADTypes.jacobian_sparsity(f!, du0, U0_for_solver, TracerSparsityDetector())
 
-# 生成稀疏雅可比结构（布尔矩阵）
-jac_sparsity_diss = Symbolics.jacobian_sparsity(f_diss!, du0_diss, U0_for_solver)
 
 # 将 Bool 稀疏结构转换为数值类型的稀疏矩阵
-sparse_jacobian_diss = Float64.(sparse(jac_sparsity_diss))
+# sparse_jacobian_diss = Float64.(sparse(jac_sparsity_diss))
 
 # 使用 NonlinearFunction 和 jac_prototype
-nonlinearFunction_with_jac_diss = NonlinearFunction(RHS_forSolver_diss; jac_prototype=sparse_jacobian_diss)
+nonlinearFunction_with_jac_diss = NonlinearFunction(RHS_forSolver_diss; jac_prototype=jac_sparsity_diss)
 prob_with_jac_diss = NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver, p2; abstol=1e-10, reltol=1e-10)
 
 # 求解问题
-sol1_diss = solve(prob_with_jac_diss, NewtonRaphson(linsolve = KrylovJL_GMRES()))
-sol1_diss_falseAutodiff = solve(prob_with_jac_diss, NewtonRaphson(; autodiff=false))
+@time sol1_diss = solve(prob_with_jac_diss, NewtonRaphson(linsolve = KrylovJL_GMRES()))
+@time sol1 = solve(prob_with_jac_diss, NewtonRaphson(),show_trace = Val(true))
+@time sol1_test = solve( NonlinearProblem(nonlinearFunction_with_jac_diss, U0_for_solver * 0, p2; abstol=1e-10, reltol=1e-10) , NewtonRaphson(),show_trace = Val(true))
+@time sol1_diss_falseAutodiff = solve(prob_with_jac_diss, NewtonRaphson(; autodiff=false))
 
 sol2_diss = solve(prob_with_jac_diss, LevenbergMarquardt())
 sol3_diss = solve(prob_with_jac_diss, TrustRegion())
@@ -845,6 +847,22 @@ result_plot3_diss = observe_numerical_sol(grid, sol3_diss.u, zlimit, show_true_s
 save(joinpath(@__DIR__, "numerical_result", "TrustRegion_tB,residual=$(round(L2_norm_of_RHS(grid, sol3_diss.resid), digits=2)),diss.png"), result_plot3_diss)
 result_plot4_diss = observe_numerical_sol(grid, sol4_diss.u, zlimit, show_true_sol = false)
 save(joinpath(@__DIR__, "numerical_result", "PseudoTransient_tB,residual=$(round(L2_norm_of_RHS(grid, sol4_diss.resid), digits=2)),diss.png"), result_plot4_diss)
+
+
+
+# Test 1: Compare outputs directly
+du_solver = similar(sol1.u)
+RHS_forSolver_diss(du_solver, sol1.u, p2)
+du_test = RHS_test(sol1.u, p2)
+println("Maximum difference between functions: ", maximum(abs.(du_solver - du_test)))
+
+# Test 2: Check specific locations
+# Find where RHS_test is largest
+_, idx = findmax(abs.(RHS_test(sol1.u, p2)))
+println("Value at maximum point:")
+println("RHS_test: ", RHS_test(sol1.u, p2)[idx])
+println("RHS_forSolver_diss: ", du_solver[idx])
+
 
 #---------------------- developing new solver ---------------------- #
 
@@ -954,3 +972,17 @@ du2 += rv_spatial .+ rv_temporal
 map(x -> x[1], grid.xyz_q[16])
 scatter3d(map(x -> x[1], grid.xyz_q[16]), map(x -> x[2], grid.xyz_q[16]), u16, color = :blue)
 scatter3d!(map(x -> x[1], grid.xyz_q[2]), map(x -> x[2], grid.xyz_q[2]), u2, color = :red)
+
+# 首先，创建一个全新的环境来测试
+using Pkg
+# 创建一个临时项目目录
+temp_dir = mktempdir()
+Pkg.activate(temp_dir)
+
+# 现在尝试安装 NonlinearSolve 的最新兼容版本
+Pkg.add("NonlinearSolve")
+
+# 查看安装的版本
+Pkg.status("NonlinearSolve")
+
+Pkg.activate(".")  # Activates the environment in the current directory

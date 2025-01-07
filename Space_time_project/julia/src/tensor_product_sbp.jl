@@ -1,5 +1,3 @@
-module tensor_product_sbp
-
 
 function tensor_product_uv_column(u, v)
     """
@@ -525,5 +523,3 @@ function d1_gl_sbp(p,dense)
     # return (XI=XI, P=P, Q=Q, D=D, M=M, tL=tL,tR=tR)
     return Vector{Float64}(ξ[:,1]), P, Q, D, M, tL, tR
 end
-
-end #module

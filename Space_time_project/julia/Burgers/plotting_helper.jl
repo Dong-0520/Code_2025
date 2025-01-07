@@ -89,6 +89,31 @@ function plot_cell(grid, cells)
     display(p)
 end
 
+function plot_grid(grid)
+    num_of_cells = n_cells(grid)
+    num_of_nodes = length(grid.xyz_q[1])
+    x = Matrix{Float64}(undef, num_of_cells, num_of_nodes)
+    y = Matrix{Float64}(undef, num_of_cells, num_of_nodes)
+
+    @inbounds for i in 1:num_of_cells
+        for node_id in 1:num_of_nodes
+            x[i, node_id] = grid.xyz_q[i][node_id][1]
+            y[i, node_id] = grid.xyz_q[i][node_id][2]
+        end
+    end
+
+    p = scatter()
+    
+    @inbounds for i in 1:num_of_cells
+        # Close the loop by appending the first node to the end
+        x_closed = vcat(x[i, :], x[i, 1])
+        y_closed = vcat(y[i, :], y[i, 1])
+        plot!(p, x_closed, y_closed, seriestype = :shape, fillalpha = 0.3, label="", color = :blue)
+    end
+
+    display(p)
+end
+
 
 function observe_iteration(grid, all_U, zlimit)
     """
@@ -96,7 +121,7 @@ function observe_iteration(grid, all_U, zlimit)
     """
     num_of_cells = n_cells(grid)
     num_of_nodes = length(grid.xyz_q[1])
-    num_of_pseudo_time_step = size(all_U, 1)
+    num_of_pseudo_time_step = size(all_U)[1]
 
     # Pre-allocate x and y arrays
     x = Matrix{Float64}(undef, num_of_cells, num_of_nodes)
@@ -117,7 +142,7 @@ function observe_iteration(grid, all_U, zlimit)
 
         for cell_id in 1:num_of_cells
             # Plot numerical and analytical solutions for this cell
-            z1 = all_U[i, cell_id, :]
+            z1 = all_U[i][cell_id, :]
             scatter3d!(p, x[cell_id, :], y[cell_id, :], z1, markersize=1, label="", zlims=zlimit, color=:blue)
             scatter3d!(p, x[cell_id, :], y[cell_id, :], analytic_values[cell_id], markersize=1, label="", zlims=zlimit, color=:orange)
         end
@@ -134,8 +159,7 @@ function observe_iteration(grid, all_U, zlimit; show_true_sol = true)
     """
     num_of_cells = n_cells(grid)
     num_of_nodes = length(grid.xyz_q[1])
-    num_of_pseudo_time_step = size(all_U, 1)
-
+    num_of_pseudo_time_step = size(all_U)[1]
     # Pre-allocate x and y arrays
     x = Matrix{Float64}(undef, num_of_cells, num_of_nodes)
     y = Matrix{Float64}(undef, num_of_cells, num_of_nodes)
@@ -155,7 +179,7 @@ function observe_iteration(grid, all_U, zlimit; show_true_sol = true)
 
         for cell_id in 1:num_of_cells
             # Plot numerical and analytical solutions for this cell
-            z1 = all_U[i, cell_id, :]
+            z1 = all_U[i][cell_id, :]
             scatter3d!(p, x[cell_id, :], y[cell_id, :], z1, markersize=1, label="", zlims=zlimit, color=:blue)
             if show_true_sol
                 scatter3d!(p, x[cell_id, :], y[cell_id, :], analytic_values[cell_id], markersize=1, label="", zlims=zlimit, color=:orange)

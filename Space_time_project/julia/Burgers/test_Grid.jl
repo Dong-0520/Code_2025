@@ -102,6 +102,17 @@ for example, I have two elements
     always in a correct order
 """
 
+
+"""
+The following tests need to be careful with the permutation, P1, and P2
+this test tells you whether you should use:
+                Pk, Pv = interface.P1, interface.P2
+                uk_face, uv_face = Rγk * uk, Rγv * uv
+                uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
+or
+                uk_face, uv_face = Rγk * uk, Rγv * uv
+                uk_adj, uv_adj = uv_face, uk_face
+"""
 @testset "check correctness of P1, P2 for periodicity functionality, check coordinate matchs for quadraleteral element" begin
     for i in 1:length(grid.face_interfaces)
         interface = grid.face_interfaces[i]
@@ -123,6 +134,31 @@ for example, I have two elements
             @test cell1_face_y ≈ cell2_face_y atol=1e-3
         elseif dy ≈ 0
             @test cell1_face_x ≈ cell2_face_x atol=1e-3
+        end
+    end
+end
+
+@testset "check correctness of P1, P2 for periodicity functionality, check coordinate matchs for quadraleteral element" begin
+    for i in 1:length(grid.face_interfaces)
+        interface = grid.face_interfaces[i]
+        c1, lf1 = interface.face_1
+        c2, lf2 = interface.face_2
+        P1, P2 = interface.P1, interface.P2
+        elem1, elem2 = grid.cells[c1].ref_data[], grid.cells[c2].ref_data[]
+        R_1, R_2 = elem1.R[lf1], elem2.R[lf2]
+        cell1_face_x = R_1 * SBPLite.get_i_coordinates(grid.xyz[c1], 1)
+        cell1_face_y = R_1 * SBPLite.get_i_coordinates(grid.xyz[c1], 2)
+        cell2_face_x = R_2 * SBPLite.get_i_coordinates(grid.xyz[c2], 1)
+        cell2_face_y = R_2 * SBPLite.get_i_coordinates(grid.xyz[c2], 2)
+        dx = abs(cell1_face_x[end] - cell1_face_x[1])
+        dy = abs(cell1_face_y[end] - cell1_face_y[1])
+        if dx > 1e-3 && dy > 1e-3
+            @test cell1_face_x ≈ cell2_face_x[P2] atol=1e-3
+            @test cell1_face_y ≈ cell2_face_y[P2] atol=1e-3
+        elseif dx ≈ 0
+            @test cell1_face_y ≈ cell2_face_y[P2] atol=1e-3
+        elseif dy ≈ 0
+            @test cell1_face_x ≈ cell2_face_x[P2] atol=1e-3
         end
     end
 end

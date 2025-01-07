@@ -1,5 +1,4 @@
-using DifferentialEquations, LinearAlgebra, BlockArrays, SparseArrays
-using Trixi
+using LinearAlgebra, BlockArrays, SparseArrays
 using JLD2
 using Plots
 using DoubleFloats
@@ -12,11 +11,12 @@ include("../src/SBPLite.jl")
 using .SBPLite
 include("plotting_helper.jl")
 
-ref = QuadRefElemGL(3)
-ref_elems_data = Dict{String, SBPLite.RefElemData}("Quadrilateral 4" => ref)
+order = 2
+ref = TriangleDiagELGL(order, 2 * order)
+ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 
 
-mesh_file = joinpath(@__DIR__, "2d_grid_test.msh")
+mesh_file = joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6_testElementOrder1.msh")
 using gmsh_jll
 include(gmsh_jll.gmsh_api)
 gmsh.initialize()
