@@ -31,11 +31,10 @@ end
 
 
 # add lines
-for i in 2:10
+for i in 1:11
     gmsh.model.geo.addLine(i, 11 + i, i)
 end
-gmsh.model.geo.addLine(12, 1, 1)
-gmsh.model.geo.addLine(22, 11, 11)
+
 
 gmsh.model.geo.addLine(1, 6, 12)
 gmsh.model.geo.addLine(11, 6, 13)

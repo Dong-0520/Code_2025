@@ -201,7 +201,7 @@ function compute_face_interfaces(cells, xyz_f::Vector{Vector{Coord{dim, T}}},
     return interfaces
 end
 
-function match_coords(u::Vector{Coord{N, T}}, v::Vector{Coord{N, T}}, tol = 1e-13) where {N, T}
+function match_coords(u::Vector{Coord{N, T}}, v::Vector{Coord{N, T}}, tol = 1e-10) where {N, T}
     p1 = zeros(Int, length(u))
     p2 = zeros(Int, length(v))
     scaled_tol = tol * length(u)
@@ -225,12 +225,13 @@ end
 # functions for periodic BC
 function compute_topology_periodic(cells::Vector{C}; coords::Vector{Coord{dim, T}} = Vector{Coord{dim, T}}()
                                                     , vector_of_nodeTags::Vector{Vector{Int}} = Vector{Vector{Int}}()
-                                                    , vector_of_nodeTagsMaster::Vector{Vector{Int}} = Vector{Vector{Int}}()) where {dim, C <: AbstractCell, T}
+                                                    , vector_of_nodeTagsMaster::Vector{Vector{Int}} = Vector{Vector{Int}}()
+                                                    , vertices_of_domain = Vector{Float64}()) where {dim, C <: AbstractCell, T}
 
     @info "Computing periodic grid topology..."
     cell_to_vertex = vertices.(cells)
     vertex_to_cell = create_vertex_to_cell_table_periodic(cell_to_vertex, vector_of_nodeTags, vector_of_nodeTagsMaster)
-    cell_to_cell, face_to_face = compute_face_neighbours_periodic(cells, coords, vertex_to_cell, vector_of_nodeTags, vector_of_nodeTagsMaster)
+    cell_to_cell, face_to_face = compute_face_neighbours_periodic(cells, coords, vertex_to_cell, vector_of_nodeTags, vector_of_nodeTagsMaster, vertices_of_domain = vertices_of_domain)
     return Topology(cell_to_vertex, vertex_to_cell, cell_to_cell, face_to_face)
 end
 
@@ -272,34 +273,32 @@ function is_two_faces_periodic(face1::NTuple{N, Int},
                                face2::NTuple{N, Int}, 
                                coords::Vector{Coord{dim, T}},
                                vector_of_nodeTags::Vector{Vector{C}}, 
-                               vector_of_nodeTagsMaster::Vector{Vector{C}}) where {dim, N, C, T}
+                               vector_of_nodeTagsMaster::Vector{Vector{C}},
+                               vertices_of_domain::Vector{Float64}) where {dim, N, C, T}
 
-    @views nodeTags1 = vector_of_nodeTags[1]
-    @views nodeTags2 = vector_of_nodeTags[2]
-    @views masterNodeTags1 = vector_of_nodeTagsMaster[1]
-    @views masterNodeTags2 = vector_of_nodeTagsMaster[2]
+    # @views nodeTags1 = vector_of_nodeTags[1]
+    # @views nodeTags2 = vector_of_nodeTags[2]
+    # @views masterNodeTags1 = vector_of_nodeTagsMaster[1]
+    # @views masterNodeTags2 = vector_of_nodeTagsMaster[2]
+    xL, xR, yB, yT = vertices_of_domain
 
     # 一个face两个点定义一边，所以一共有四个点定义两个边
-    # face 1 的
-    # coord1_x = get_coordinate(coords[face1[1]])[1]
-    # coord1_y = get_coordinate(coords[face1[1]])[2]
-    # coord2_x = get_coordinate(coords[face1[2]])[1]
-    # coord2_y = get_coordinate(coords[face1[2]])[2]
+    # face 1 的 首尾两点
     coord1_x = get_i_coordinates(coords, 1)[face1[1]]
     coord1_y = get_i_coordinates(coords, 2)[face1[1]]
-    coord2_x = get_i_coordinates(coords, 1)[face1[2]]
-    coord2_y = get_i_coordinates(coords, 2)[face1[2]]
-    # face 2 的
-    # coord3_x = get_coordinate(coords[face2[1]])[1]
-    # coord3_y = get_coordinate(coords[face2[1]])[2]
-    # coord4_x = get_coordinate(coords[face2[2]])[1]
-    # coord4_y = get_coordinate(coords[face2[2]])[2]
+    coord2_x = get_i_coordinates(coords, 1)[face1[end]]
+    coord2_y = get_i_coordinates(coords, 2)[face1[end]]
+    # face 2 的 首尾两点
     coord3_x = get_i_coordinates(coords, 1)[face2[1]]
     coord3_y = get_i_coordinates(coords, 2)[face2[1]]
-    coord4_x = get_i_coordinates(coords, 1)[face2[2]]
-    coord4_y = get_i_coordinates(coords, 2)[face2[2]]
+    coord4_x = get_i_coordinates(coords, 1)[face2[end]]
+    coord4_y = get_i_coordinates(coords, 2)[face2[end]]
 
-    if coord1_y == coord2_y && coord3_y == coord4_y && coord1_y !== coord3_y # y 方向上下周期边界
+    # y 方向上下周期边界
+    if (isapprox(coord1_y, coord2_y, atol = 1e-15) && (isapprox(coord1_y, yB, atol = 1e-10) || isapprox(coord1_y, yT, atol = 1e-10))
+        && isapprox(coord3_y, coord4_y, atol = 1e-15) && (isapprox(coord3_y, yB, atol = 1e-10) || isapprox(coord3_y, yT, atol = 1e-10))
+        && abs(coord1_y - coord3_y) > 0.001) 
+
         if coord1_x == coord3_x && coord2_x == coord4_x
             return true
         elseif coord1_x == coord4_x && coord2_x == coord3_x
@@ -307,7 +306,10 @@ function is_two_faces_periodic(face1::NTuple{N, Int},
         else
             return false
         end
-    elseif coord1_x == coord2_x && coord3_x == coord4_x && coord1_x !== coord3_x # x 方向左右周期边界
+    # x 方向左右周期边界
+    elseif (isapprox(coord1_x, coord2_x, atol = 1e-15) && (isapprox(coord1_x, xL, atol = 1e-10) || isapprox(coord1_x, xR, atol = 1e-10))
+        && isapprox(coord3_x, coord4_x, atol = 1e-15) && (isapprox(coord3_x, xL, atol = 1e-10) || isapprox(coord3_x, xR, atol = 1e-10))
+        && abs(coord1_x - coord3_x) > 0.001)
         if coord1_y == coord3_y && coord2_y == coord4_y
             return true
         elseif coord1_y == coord4_y && coord2_y == coord3_y
@@ -326,7 +328,8 @@ function add_face_neighbour_periodic!(face_face_neighbours::Matrix{FaceIndex}, c
                               cell_neighbour_id::Int, 
                               coords::Vector{Coord{dim, T}},
                               vector_of_nodeTags::Vector{Vector{C}}, 
-                              vector_of_nodeTagsMaster::Vector{Vector{C}}) where {C1 <: AbstractCell,
+                              vector_of_nodeTagsMaster::Vector{Vector{C}},
+                              vertices_of_domain::Vector{Float64}) where {C1 <: AbstractCell,
                                                              C2 <: AbstractCell, C, dim, T}
     for (local_face, face) in enumerate(faces(cell))
         unique_face = sortface(face) 
@@ -336,7 +339,7 @@ function add_face_neighbour_periodic!(face_face_neighbours::Matrix{FaceIndex}, c
                 # 相邻的两个element的共边可能是（2，6）和（6，2），所以用sort来给排序一下。
                 # 这种方法只能用真的相邻边， 周期性边界边就不行了，所以要单独处理
                 face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
-            elseif is_two_faces_periodic(face, face_neighbour, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
+            elseif is_two_faces_periodic(face, face_neighbour, coords, vector_of_nodeTags, vector_of_nodeTagsMaster, vertices_of_domain)
                 face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
             end
         end
@@ -347,7 +350,8 @@ function compute_face_neighbours_periodic(cells::Vector{C},
                                         coords::Vector{Coord{dim, T}},
                                         vertex_to_cell::Vector{Set{Int}}, 
                                         vector_of_nodeTags::Vector{Vector{Int}}, 
-                                        vector_of_nodeTagsMaster::Vector{Vector{Int}}) where {C <: AbstractCell, T, dim}
+                                        vector_of_nodeTagsMaster::Vector{Vector{Int}};
+                                        vertices_of_domain = Vector{Float64}()) where {C <: AbstractCell, T, dim}
 
     
     _, max_faces, _ = compute_max_sizes(cells)
@@ -368,7 +372,7 @@ function compute_face_neighbours_periodic(cells::Vector{C},
         end
 
 
-        cell_to_cell[cell_id] = SBPLite.CellIndex.(collect(cell_neighbour_ids))
+        cell_to_cell[cell_id] = CellIndex.(collect(cell_neighbour_ids))
 
         # 重点要改的是这个for loop, 注意到v的代码把边界element的边界face的neighbor记成了FaceIndex((-1, -1))
         # 但我们要把这个改成对应边界边的FaceIndex((global_cell_idx, local_face_idx))
@@ -390,7 +394,7 @@ function compute_face_neighbours_periodic(cells::Vector{C},
             for cell_neighbour_id in cell_neighbour_ids
                 cell_neighbour = cells[cell_neighbour_id]
                 add_face_neighbour_periodic!(face_to_face, cell, cell_id, cell_neighbour, 
-                                                cell_neighbour_id, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
+                                                cell_neighbour_id, coords, vector_of_nodeTags, vector_of_nodeTagsMaster, vertices_of_domain)
             end
         end
     end
@@ -643,7 +647,7 @@ function Grid(cells::Vector{C},
         end
         xL, xR = round(minimum(all_x), digits=5), round(maximum(all_x), digits=12)
         yB, yT = round(minimum(all_y), digits=5), round(maximum(all_y), digits=12)
-        topology = compute_topology_periodic(cells, coords = xyz_gmsh, vector_of_nodeTags = vector_of_nodeTags, vector_of_nodeTagsMaster = vector_of_nodeTagsMaster)
+        topology = compute_topology_periodic(cells, coords = xyz_gmsh, vector_of_nodeTags = vector_of_nodeTags, vector_of_nodeTagsMaster = vector_of_nodeTagsMaster, vertices_of_domain = [xL, xR, yB, yT])
         face_interfaces = compute_face_interfaces_periodic(cells, xyz_f, topology.face_face_neighbours, xL, xR, yB, yT, tol=1e-5)
     else
         topology = compute_topology(cells)

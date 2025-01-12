@@ -2,19 +2,20 @@ using gmsh_jll
 include(gmsh_jll.gmsh_api)
 
 # 初始化 Gmsh
+print(" This is test mesh file ")
 gmsh.initialize()
 
-meshNumber = 5
+meshNumber = 7.5
 alg_number = 6
 
-name = "BurgersMeshSlab_01_Triangle"
+name = "BurgersMeshSlab_005_SimpleTriangle"
 gmsh.model.add(name)
 
 lc = meshNumber * 0.01
 xL = 0.0
 xR = 0.5
 yB = 0.0
-yT = 0.1
+yT = 0.05
 
 x_star = 0.25
 a = 0.0
@@ -119,7 +120,7 @@ gmsh.model.mesh.generate(2)
 gmsh.model.geo.synchronize()
 
 # save mesh
-output_path = joinpath(@__DIR__, "mesh/$name.msh")
+output_path = joinpath(@__DIR__, "$name.msh")
 gmsh.write(output_path)
 
 # run gmsh gui

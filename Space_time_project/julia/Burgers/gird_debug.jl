@@ -16,7 +16,7 @@ ref = TriangleDiagELGL(order, 2 * order)
 ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 
 
-mesh_file = joinpath(@__DIR__, "mesh/BurgersMeshSlab_05tB_test6_testElementOrder1.msh")
+mesh_file = "C:\\MyGraduateResearch\\Code_2025\\Space_time_project\\julia\\Burgers\\mesh\\BurgersMeshSlab_005_SimpleTriangle.msh"
 using gmsh_jll
 include(gmsh_jll.gmsh_api)
 gmsh.initialize()
@@ -88,20 +88,20 @@ for i in 1:length(cells)
 end
 xL, xR = round(minimum(all_x), digits=5), round(maximum(all_x), digits=12)
 yB, yT = round(minimum(all_y), digits=5), round(maximum(all_y), digits=12)
-topology = SBPLite.compute_topology_periodic(cells, coords = xyz_gmsh, vector_of_nodeTags = vector_of_nodeTags, vector_of_nodeTagsMaster = vector_of_nodeTagsMaster)
+topology = compute_topology_periodic_test(cells, coords = xyz_gmsh, vector_of_nodeTags = vector_of_nodeTags, vector_of_nodeTagsMaster = vector_of_nodeTagsMaster, vertices_of_domain = [xL, xR, yB, yT])
 
-cell_to_vertex = vertices.(cells)
-vertex_to_cell = create_vertex_to_cell_table_periodic_test(cell_to_vertex, vector_of_nodeTags, vector_of_nodeTagsMaster)
-cell_to_cell, face_to_face = compute_face_neighbours_periodic_test(cells, xyz_gmsh, vertex_to_cell, vector_of_nodeTags, vector_of_nodeTagsMaster)
 
-_, max_faces, _ = compute_max_sizes(cells)
+
+vertex_to_cell = SBPLite.create_vertex_to_cell_table_periodic(vertices.(cells), vector_of_nodeTags, vector_of_nodeTagsMaster)
+_, max_faces, _ = SBPLite.compute_max_sizes(cells)
 face_to_face = Matrix{FaceIndex}(undef, length(cells), max_faces)
 fill!(face_to_face, FaceIndex(-1, -1))                            #TODO: Improve this
 cell_to_cell = Vector{Vector{SBPLite.CellIndex}}(undef, length(cells))
 # cell_to_cell 是指当前cell的所有的neighbour，包括顶点的neighbor
 # face_to_face 是指当前cell的所有的face的neighbor
-cell_id = 1
+cell_id = 12
 cell = cells[cell_id]
+
 cell_neighbour_ids = Set{Int}()
 for vertex in vertices(cell)
     for vertex_cell_id in vertex_to_cell[vertex]
@@ -112,7 +112,7 @@ for vertex in vertices(cell)
 end
 
 
-cell_to_cell[cell_id] = SBPLite.CellIndex.(collect(cell_neighbour_ids))
+cell_to_cell[cell_id] = CellIndex.(collect(cell_neighbour_ids))
 
 # 重点要改的是这个for loop, 注意到v的代码把边界element的边界face的neighbor记成了FaceIndex((-1, -1))
 # 但我们要把这个改成对应边界边的FaceIndex((global_cell_idx, local_face_idx))
@@ -123,38 +123,215 @@ cell_to_cell[cell_id] = SBPLite.CellIndex.(collect(cell_neighbour_ids))
 cell_nodes = Set(get_nodes(cell))
 # 如果当前cell的node_id, 和四个边界上的node_id 都没有交集，那么就是非边界element
 # if isempty(intersect(cell_nodes, Set(vcat(vector_of_nodeTags...)))) && isempty(intersect(cell_nodes, Set(vcat(vector_of_nodeTagsMaster...))))
-
-# 边界element 走我的代码
-for cell_neighbour_id in cell_neighbour_ids
-    print(1)
-    cell_neighbour = cells[cell_neighbour_id]
-    SBPLite.add_face_neighbour_periodic!(face_to_face, cell, cell_id, cell_neighbour, 
-                                    cell_neighbour_id, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
+if ((length(intersect(cell_nodes, Set(vcat(vector_of_nodeTags...)))) in (0, 1)) && (length(intersect(cell_nodes, Set(vcat(vector_of_nodeTagsMaster...)))) in (0, 1)))
+    # 非边界element直接走V的代码
+    for cell_neighbour_id in cell_neighbour_ids
+        cell_neighbour = cells[cell_neighbour_id]
+        add_face_neighbour!(face_to_face, cell, cell_id, cell_neighbour, cell_neighbour_id)
+    end
+else
+    # 边界element 走我的代码
+    for cell_neighbour_id in cell_neighbour_ids
+        cell_neighbour = cells[cell_neighbour_id]
+        add_face_neighbour_periodic!(face_to_face, cell, cell_id, cell_neighbour, 
+                                        cell_neighbour_id, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
+    end
 end
-7 2 3
-cell_neighbour_id = 2
+
+cell_neighbour_id = 14
 cell_neighbour = cells[cell_neighbour_id]
-face_face_neighbours = face_to_face
-cell = cells[cell_id]
-    
+add_face_neighbour_periodic!(face_to_face, cell, cell_id, cell_neighbour, 
+                                    cell_neighbour_id, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
 
 for (local_face, face) in enumerate(faces(cell))
-    unique_face = SBPLite.sortface(face) 
+    unique_face = sortface(face) 
     for (local_face_2, face_neighbour) in enumerate(faces(cell_neighbour))
-        unique_face_2 = SBPLite.sortface(face_neighbour)
+        unique_face_2 = sortface(face_neighbour)
         if unique_face == unique_face_2
             # 相邻的两个element的共边可能是（2，6）和（6，2），所以用sort来给排序一下。
             # 这种方法只能用真的相邻边， 周期性边界边就不行了，所以要单独处理
-            print("two faces are neighbours")
-            face_face_neighbours[cell_id, local_face] = SBPLite.FaceIndex(cell_neighbour_id, local_face_2)
-        elseif is_two_faces_periodic_test(face, face_neighbour, xyz_gmsh, vector_of_nodeTags, vector_of_nodeTagsMaster)
-            print("two faces are periodic")
-            face_face_neighbours[cell_id, local_face] = SBPLite.FaceIndex(cell_neighbour_id, local_face_2)
+            face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
+        elseif is_two_faces_periodic(face, face_neighbour, coords, vector_of_nodeTags, vector_of_nodeTagsMaster)
+            face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
         end
     end
 end
 
-face_interfaces = SBPLite.compute_face_interfaces_periodic(cells, xyz_f, topology.face_face_neighbours, xL, xR, yB, yT, tol=1e-5)
+local_face = 1
+face = faces(cell)[local_face]
+unique_face = SBPLite.sortface(face) 
+for (local_face_2, face_neighbour) in enumerate(faces(cell_neighbour))
+    unique_face_2 = SBPLite.sortface(face_neighbour)
+    if unique_face == unique_face_2
+        # 相邻的两个element的共边可能是（2，6）和（6，2），所以用sort来给排序一下。
+        # 这种方法只能用真的相邻边， 周期性边界边就不行了，所以要单独处理
+        # face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
+        println("local_face2 = ", local_face_2, "face_neighbour = ", face_neighbour, "nonPeriodic")
+    elseif SBPLite.is_two_faces_periodic(face, face_neighbour, xyz_gmsh, vector_of_nodeTags, vector_of_nodeTagsMaster)
+        # face_face_neighbours[cell_id, local_face] = FaceIndex(cell_neighbour_id, local_face_2)
+        println("local_face2 = ", local_face_2, "face_neighbour = ", face_neighbour, "Periodic")
+    end
+end
+
+
+
+
+
+
+
+
+# face_interfaces = SBPLite.compute_face_interfaces_periodic(cells, xyz_f, topology.face_face_neighbours, xL, xR, yB, yT, tol=1e-5)
+face_interfaces = compute_face_interfaces_periodic_test(cells, xyz_f, topology.face_face_neighbours, xL, xR, yB, yT, tol=1e-5)
+
+
+
+
+u = StaticArraysCore.SVector{2, Float64}[[0.06249999999985273, 3.469446951953614e-18], [0.06249999999985273, 0.013819660112501058], [0.06249999999985273, 0.036180339887498955], [0.06249999999985273, 0.05]]
+v = StaticArraysCore.SVector{2, Float64}[[0.0, 0.05], [0.0, 0.036180339887498955], [0.0, 0.013819660112501058], [0.0, 3.469446951953614e-18]]
+
+scatter([0.06249999999985273, 0.06249999999985273, 0.06249999999985273, 0.06249999999985273], [3.469446951953614e-18, 0.013819660112501058, 0.036180339887498955, 0.05], label="u")
+scatter!([0, 0, 0, 0], [0.05, 0.036180339887498955, 0.013819660112501058, 3.469446951953614e-18], label="v")
+face_interfaces = Set{Set{FaceIndex}}()
+for i in axes(topology.face_face_neighbours)[1]
+    for j in axes(topology.face_face_neighbours)[2]
+        if topology.face_face_neighbours[i, j] != FaceIndex(-1, -1)
+            if topology.face_face_neighbours[i, j] == FaceIndex((14,1)) || topology.face_face_neighbours[i, j] == FaceIndex((12,1))
+                println("i = ", i, "j = ", j)
+            end
+            push!(face_interfaces, Set([FaceIndex(i, j), topology.face_face_neighbours[i, j]]))
+        end
+    end
+end
+face_interfaces = collect(face_interfaces)
+interfaces = FaceInterface[]
+i = 36
+face_interface = collect(face_interfaces[i])
+c1, face_1 = face_interface[1]
+c2, face_2 = face_interface[2]
+cell1 = cells[c1]
+cell2 = cells[c2]
+# ref_elem1, ref_elem2 = ref_elems_data[typeof(cell1)], ref_elems_data[typeof(cell2)]
+ref_elem1 = cell1.ref_data[]
+ref_elem2 = cell2.ref_data[]
+cell1_nodes = Set(get_nodes(cell1))
+cell2_nodes = Set(get_nodes(cell2))
+u = xyz_f[c1][ref_elem1.f_mask[face_1]]
+v = xyz_f[c2][ref_elem2.f_mask[face_2]]
+ux = get_i_coordinates(u, 1)
+uy = get_i_coordinates(u, 2)
+vx = get_i_coordinates(v, 1)
+vy = get_i_coordinates(v, 2)
+# for now this if statement works only for 2D
+# 边界element 走我的代码
+
+if (all(x -> isapprox(x, xL, atol = tol), ux) && all(x -> isapprox(x, xR, atol = tol), vx) || 
+    all(x -> isapprox(x, xR, atol = tol), ux) && all(x -> isapprox(x, xL, atol = tol), vx) ||
+    all(x -> isapprox(x, yB, atol = tol), uy) && all(x -> isapprox(x, yT, atol = tol), vy) ||
+    all(x -> isapprox(x, yT, atol = tol), uy) && all(x -> isapprox(x, yB, atol = tol), vy))
+    p1, p2 = SBPLite.match_coords_periodic(u, v, c1 = c1, c2 = c2)
+else 
+    print("u = ", u, "\n", "v = ", v, "\n", "i = ", i, "\n")
+    p1, p2 = match_coords_test(u, v)
+end
+push!(interfaces, FaceInterface(face_interface[1], face_interface[2], p1, p2))
+
+function compute_topology_periodic_test(cells::Vector{C}; coords::Vector{Coord{dim, T}} = Vector{Coord{dim, T}}()
+                                                    , vector_of_nodeTags::Vector{Vector{Int}} = Vector{Vector{Int}}()
+                                                    , vector_of_nodeTagsMaster::Vector{Vector{Int}} = Vector{Vector{Int}}()
+                                                    , vertices_of_domain = Vector{Float64}()) where {dim, C <: AbstractCell, T}
+
+    @info "Computing periodic grid topology..."
+    cell_to_vertex = vertices.(cells)
+    vertex_to_cell = SBPLite.create_vertex_to_cell_table_periodic(cell_to_vertex, vector_of_nodeTags, vector_of_nodeTagsMaster)
+    cell_to_cell, face_to_face = compute_face_neighbours_periodic(cells, coords, vertex_to_cell, vector_of_nodeTags, vector_of_nodeTagsMaster, vertices_of_domain = vertices_of_domain)
+    return Topology(cell_to_vertex, vertex_to_cell, cell_to_cell, face_to_face)
+end
+
+
+function match_coords_test(u::Vector{Coord{N, T}}, v::Vector{Coord{N, T}}, tol = 1e-10) where {N, T}
+    p1 = zeros(Int, length(u))
+    p2 = zeros(Int, length(v))
+    scaled_tol = tol * length(u)
+    @inbounds for (i, coord1) in enumerate(u)
+        coord1_norm = norm(coord1)
+        for (j, coord2) in enumerate(v)
+            max_u_v = max(coord1_norm, norm(coord2))
+            if norm(coord1 - coord2) < scaled_tol * max(one(T), max_u_v)
+                p1[i] = j
+                p2[j] = i
+            end
+        end
+    end
+    @assert all(p1 .!= 0)&&all(p2 .!= 0) "Could not match all coordinates"
+
+function compute_face_interfaces_periodic_test(cells, xyz_f::Vector{Vector{Coord{dim, T}}},
+                                 face_to_face::Matrix{FaceIndex},
+                                 xL::R, xR::R, yB::R, yT::R; tol = 1e-6) where {dim, T, R <: Real}
+    #TODO: Implement Set equality: isequal and hash.
+    # for periodicity, this for loop is fine
+    face_interfaces = Set{Set{FaceIndex}}()
+    for i in axes(face_to_face)[1]
+        for j in axes(face_to_face)[2]
+            if face_to_face[i, j] != FaceIndex(-1, -1)
+                push!(face_interfaces, Set([FaceIndex(i, j), face_to_face[i, j]]))
+            end
+        end
+    end
+
+    face_interfaces = collect(face_interfaces)
+    interfaces = FaceInterface[]
+    for i in eachindex(face_interfaces)
+        face_interface = collect(face_interfaces[i])
+        c1, face_1 = face_interface[1]
+        c2, face_2 = face_interface[2]
+        cell1 = cells[c1]
+        cell2 = cells[c2]
+        # ref_elem1, ref_elem2 = ref_elems_data[typeof(cell1)], ref_elems_data[typeof(cell2)]
+        ref_elem1 = cell1.ref_data[]
+        ref_elem2 = cell2.ref_data[]
+        cell1_nodes = Set(get_nodes(cell1))
+        cell2_nodes = Set(get_nodes(cell2))
+        u = xyz_f[c1][ref_elem1.f_mask[face_1]]
+        v = xyz_f[c2][ref_elem2.f_mask[face_2]]
+        ux = get_i_coordinates(u, 1)
+        uy = get_i_coordinates(u, 2)
+        vx = get_i_coordinates(v, 1)
+        vy = get_i_coordinates(v, 2)
+        # for now this if statement works only for 2D
+        # 边界element 走我的代码
+    
+        if (all(x -> isapprox(x, xL, atol = tol), ux) && all(x -> isapprox(x, xR, atol = tol), vx) || 
+            all(x -> isapprox(x, xR, atol = tol), ux) && all(x -> isapprox(x, xL, atol = tol), vx) ||
+            all(x -> isapprox(x, yB, atol = tol), uy) && all(x -> isapprox(x, yT, atol = tol), vy) ||
+            all(x -> isapprox(x, yT, atol = tol), uy) && all(x -> isapprox(x, yB, atol = tol), vy))
+            p1, p2 = SBPLite.match_coords_periodic(u, v, c1 = c1, c2 = c2)
+        else 
+            print("u = ", u, "\n", "v = ", v, "\n", "i = ", i, "\n")
+            p1, p2 = match_coords_test(u, v)
+        end
+        push!(interfaces, FaceInterface(face_interface[1], face_interface[2], p1, p2))
+    end
+
+    return interfaces
+end
+
+function match_coords_test(u::Vector{Coord{N, T}}, v::Vector{Coord{N, T}}, tol = 1e-10) where {N, T}
+    p1 = zeros(Int, length(u))
+    p2 = zeros(Int, length(v))
+    scaled_tol = tol * length(u)
+    @inbounds for (i, coord1) in enumerate(u)
+        coord1_norm = norm(coord1)
+        for (j, coord2) in enumerate(v)
+            max_u_v = max(coord1_norm, norm(coord2))
+            if norm(coord1 - coord2) < scaled_tol * max(one(T), max_u_v)
+                p1[i] = j
+                p2[j] = i
+            end
+        end
+    end
+    @assert all(p1 .!= 0)&&all(p2 .!= 0) "Could not match all coordinates"
+    return p1, p2
+end
 
 
 uk, uv = u[ck, :], u[cv, :]
