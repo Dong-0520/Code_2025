@@ -3,7 +3,8 @@ include(joinpath(@__DIR__, "../src/parameter.jl"))
 include(joinpath(@__DIR__, "../../src_simpleGrid/SimpleGrid_Euler.jl"))
 include("../src/nonlinear_solver_contribution.jl")
 include("../src/dissipation.jl")
-
+include(joinpath(@__DIR__, "../src/plot_helper_grid.jl"))
+include(joinpath(@__DIR__, "../src/plot_helper_simple_grid.jl"))
 
 # solve the problem on the nonaligned grid by pseudo transient with dissipation term
 using NonlinearSolve
@@ -20,11 +21,11 @@ function RHS_for_solver(du, U, p; WL = [3, 2, 10], WR = [3, -1, 5], vol_diss_fac
                  .   .    .
                  ρN, ρuN, EN
     """
-    grid, newGrid, buffer.smooth_interior_interfaces, buffer.interfaces_aligning_shock, buffer.interfaces_aligning_contact_wave, 
-                                buffer.bottom_faceIndex, buffer.boundary_faceIndex, IC, FBC = p
+    newGrid, smooth_interior_interfaces, interfaces_aligning_shock, interfaces_aligning_contact_wave, 
+                                bottom_faceIndex, boundary_faceIndex, IC, FBC = p
     W = evaluate_W_forSolver(U)
     V = evaluate_entropy_variables_forSolver(W) # entropy variables
-    One = ones(length(grid.xyz[1]) * 3)
+    One = ones(size(newGrid.ref.rst,2) * num_of_variables)
 
     for cell_id in 1:n_cells(grid)
         # VOL_contribution!(du, newGrid, W, cell_id, One)
@@ -142,38 +143,152 @@ newGrid = construct_simpleGrid(
     buffer.boundary_faceIndex
 )
 
-para =  newGrid, smooth_interior_interfaces, interfaces_aligning_shock, interfaces_aligning_contact_wave, bottom_faceIndex, boundary_faceIndex, IC, FBC
 
-para = (current_grid, buffer.smooth_interior_interfaces, buffer.interfaces_aligning_shock, buffer.interfaces_aligning_contact_wave, 
+# para = (current_grid, buffer.smooth_interior_interfaces, buffer.interfaces_aligning_shock, buffer.interfaces_aligning_contact_wave, 
+#                                 buffer.bottom_faceIndex, buffer.boundary_faceIndex, IC, FBC)
+
+
+# du = similar(analytic_U); fill!(du, 0.0)
+
+# RHS_for_solver(du, analytic_U, para)
+
+function space_time_RK4(U, pseudo_dt, p; vol_diss_factor = 0.1, interface_diss_factor = 1.0)
+    c1, c2, c3, c4 = 0.0, 0.40128709, 0.56449983, 0.87678807
+    b1, b2, b3, b4 = 0.20334721, 0.19932974, 0.28339585, 0.31392720
+    a21 = 0.40128709
+    a31, a32 = 0.28224991, 0.28224991
+    a41, a42, a43 = 0.25972925, 0.25479937, 0.36225945
+
+    # 🔥 适配新的RHS函数
+    function compute_RHS(U_input)
+        du = similar(U_input)
+        fill!(du, 0.0)
+        RHS_for_solver(du, U_input, p, 
+                      vol_diss_factor=vol_diss_factor, 
+                      interface_diss_factor=interface_diss_factor)
+        return -du  # 🔥 注意：伪瞬态是 dU/dt = -R(U)，所以取负号
+    end
+
+    k1 = compute_RHS(U)
+    k2 = compute_RHS(U + a21 * pseudo_dt * k1)
+    k3 = compute_RHS(U + a31 * pseudo_dt * k1 + a32 * pseudo_dt * k2)
+    k4 = compute_RHS(U + a41 * pseudo_dt * k1 + a42 * pseudo_dt * k2 + a43 * pseudo_dt * k3)
+
+    result = U + pseudo_dt * (b1 * k1 + b2 * k2 + b3 * k3 + b4 * k4)
+
+    # return positive_filtering(result)
+    return result
+end
+
+function space_time_solve(U0::Array{Float64, 3}, p; 
+                         pseudo_dt = 1.0, 
+                         num_of_pseudo_time_step = 1000, 
+                         num_of_variable = 3,  
+                         vol_diss_factor = 10.0, 
+                         interface_diss_factor = 1.0,
+                         tolerance = 1e-2,
+                         adaptive_dt = true,
+                         print_interval = 10)
+
+    num_of_cells = size(U0, 1)
+    num_of_nodes = size(U0, 2)
+    
+    # 🔥 初始化存储
+    all_U = Vector{Array{Float64, 3}}()
+    diffs = Vector{Float64}()
+    residual_norms = Vector{Float64}()
+    
+    push!(all_U, deepcopy(U0))
+    
+    println("🚀 开始伪瞬态求解...")
+    println("初始伪时间步长: $pseudo_dt")
+    println("目标容差: $tolerance")
+
+    for pseudo_step in 1:num_of_pseudo_time_step
+        curr_U = all_U[pseudo_step]
+        
+        # 🔥 计算当前步的残差范数
+        du_residual = similar(curr_U)
+        fill!(du_residual, 0.0)
+        RHS_for_solver(du_residual, curr_U, p, 
+                      vol_diss_factor=vol_diss_factor, 
+                      interface_diss_factor=interface_diss_factor)
+        residual_norm = norm(du_residual)
+        push!(residual_norms, residual_norm)
+        
+        # 🔥 RK4步进
+        next_U = space_time_RK4(curr_U, pseudo_dt, p, 
+                               vol_diss_factor=vol_diss_factor, 
+                               interface_diss_factor=interface_diss_factor)
+        
+        # 🔥 计算变化量
+        max_diff = maximum(abs.(next_U - curr_U))
+        push!(diffs, max_diff)
+        push!(all_U, next_U)
+
+        # 🔥 自适应时间步长
+        if adaptive_dt && pseudo_step > 5
+            recent_diffs = diffs[max(1, end-4):end]
+            if length(recent_diffs) > 1
+                diff_trend = (recent_diffs[end] - recent_diffs[1]) / length(recent_diffs)
+                
+                if diff_trend < -1e-8 && max_diff < 1e-6  # 收敛良好
+                    pseudo_dt = min(pseudo_dt * 1.2, 1e-2)
+                elseif diff_trend > 1e-8 || max_diff > 10  # 收敛困难
+                    pseudo_dt = max(pseudo_dt * 0.7, 1e-6)
+                end
+            end
+        end
+
+        # 🔥 输出进度
+        if pseudo_step % print_interval == 0
+            println("步数 $pseudo_step: 残差范数 = $(round(residual_norm, digits=8)), 最大变化 = $(round(max_diff, digits=8)), dt = $(round(pseudo_dt, digits=6))")
+        end
+
+        # 🔥 检查发散
+        if max_diff > 100 || isnan(max_diff) || any(isnan, next_U)
+            println("❌ 不稳定! 步数: $pseudo_step, pseudo_dt = $pseudo_dt")
+            return all_U, diffs, residual_norms, false
+        end
+        
+        # 🔥 检查收敛 (使用残差范数更准确)
+        if residual_norm < tolerance && max_diff < tolerance * 10
+            println("✅ 收敛成功! 残差范数: $(round(residual_norm, digits=12))")
+            println("总步数: $pseudo_step, 最终dt: $(round(pseudo_dt, digits=6))")
+            return all_U, diffs, residual_norms, true
+        end
+    end
+    
+    println("⚠️  未收敛，达到最大步数")
+    return all_U, diffs, residual_norms, false
+end
+
+
+# 🔥 设置参数 (适配你的RHS_for_solver)
+p = (newGrid, buffer.smooth_interior_interfaces, buffer.interfaces_aligning_shock, buffer.interfaces_aligning_contact_wave, 
                                 buffer.bottom_faceIndex, buffer.boundary_faceIndex, IC, FBC)
 
+# 🔥 调用伪瞬态求解
+all_U, diffs, residual_norms, converged = space_time_solve(
+    analytic_U,  # 初始解
+    p,
+    pseudo_dt = 1e-2,
+    num_of_pseudo_time_step = 10000,
+    vol_diss_factor = 20.0,
+    interface_diss_factor = 1.0,
+    tolerance = 1e-8,
+    adaptive_dt = true,
+    print_interval = 50
+)
 
-du = similar(analytic_U); fill!(du, 0.0)
+final_U = all_U[end]
 
-RHS_for_solver(du, analytic_U, para)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+# plot_one_variable_by_U(grid, final_U)
+plot_interactive_solution_by_U(grid, final_U)
 
 
 
 using SparseConnectivityTracer, ADTypes, NonlinearSolve, NLsolve
-
-
-
 
 Pkg.activate("MadNLP_env")
 
@@ -536,13 +651,17 @@ function pde_model_with_solver_struct(buffer::SpaceTimeBuffer; lin_solver = MadN
     return model  # 返回更新后的 buffer
 end
 # current_grid = nothing
-buffer = SpaceTimeBuffer(grid, [S1, S2, S3], analytic_U)
+buffer = SpaceTimeBuffer(grid, [S1, S2, S3], final_U)
 buffer.indices_moving_coords = [5, 7]
 buffer.indices_moving_coords
-model1 = pde_model_with_solver_struct(buffer, αmesh = 0, αshk = 10, max_iter = 10, lin_solver = MadNLPHSL.Ma57Solver)
+model1 = pde_model_with_solver_struct(buffer, αmesh = 0, αshk = 10, max_iter = 400, lin_solver = MadNLPHSL.Ma57Solver)
+
+@save joinpath(@__DIR__, "Euler_optimization_result_order1.jld2") buffer final_U
+
+
 
 using Plots
-include(joinpath(@__DIR__, "src/plot_helper_simple_grid.jl"))
+
 final_simple_grid, final_u = wrap_up_results(buffer, num_of_xyz_gmsh = length(grid.xyz_gmsh))
 final_W = evaluate_W_forSolver(final_u)
 plot_u_interactive(final_simple_grid, final_W[:, :, 1])                                                                                                                                                                                                                              
