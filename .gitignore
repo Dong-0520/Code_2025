@@ -1,0 +1,12 @@
+﻿# Julia project ignore rules
+
+
+# Ignore images and GIFs
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# OS-specific junk files
+.DS_Store
+Thumbs.db
