@@ -33,7 +33,7 @@ scatter(ref.rst[1,:], ref.rst[2,:])
 grid = read_mesh("C:\\MyGraduateResearch\\Code_2025\\Space_time_project\\julia\\Burgers\\mesh\\BurgersMeshSlab_005_SimpleTriangle.msh", ref_elems_data, identity)
 
 # This is random larger mesh from 0 to 0.15
-grid = read_mesh("C:\\MyGraduateResearch\\Code_2025\\Space_time_project\\julia\\Burgers\\mesh\\BurgersMeshSlab_015_Triangle.msh", ref_elems_data, identity)
+grid = read_mesh("C:\\MyGraduateResearch\\Code_2025\\Space_time_project\\julia\\Burgers\\mesh\\BurgersMeshSlab_015_Triangle.msh", ref_elems_data, Base.identity)
 
 # continuous case, dont forget change flux at shock
 function analytic_u(x::Coord)
@@ -157,7 +157,6 @@ function set_IC_for_slab(grid; u = Matrix{Float64}(undef, 2, 2), slab = 1)
     return IC
 end
 
-
 function mysign(x)
     x >= 0 ? 1 : -1
 end
@@ -216,50 +215,6 @@ function space_time_RK4(U, t, pseudo_dt, p; diss = false, test = false)
 end
 
 
-
-# function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false, tol = 1e-10)
-#     num_of_cells = n_cells(p[1])
-#     num_of_nodes = Int(length(p[1].xyz_q[1]))
-#     all_U = Array{Float64}(undef, num_of_pseudo_time_step+1, num_of_cells, num_of_nodes)
-#     norms = Array{Float64}(undef, num_of_pseudo_time_step+1)
-#     norm_diffs = Array{Float64}(undef, num_of_pseudo_time_step)
-#     all_U[1, :, :] = U0
-#     norms[1] = L2_norm_of_RHS(p[1], U0)
-
-
-#     for pseudo_step in 1:num_of_pseudo_time_step
-#         curr_U = deepcopy(all_U[pseudo_step, :, :])
-#         curr_norm = norms[pseudo_step]
-
-#         next_U = space_time_RK4(curr_U, 0.0, pseudo_dt, p, diss = diss, test = test)
-#         next_norm = L2_norm_of_RHS(p[1], next_U)
-#         diff = abs(next_norm - curr_norm)
-#         norm_diffs[pseudo_step] = diff
-
-#         all_U[pseudo_step+1, :, :] = next_U
-#         norms[pseudo_step+1] = next_norm
-
-
-#         if diff < tol
-#             println("\n Solution converged at pseudo time step: $(pseudo_step+1) \n")
-#             display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion", ylims = [0, ]))
-#             where_min = argmin(norms[1:pseudo_step])
-#             return all_U[1:pseudo_step+1, :, :], norms[1:pseudo_step+1], all_U[where_min, :, :]
-#         elseif curr_norm > 100 # check divergence 
-#             println("Solution diverges at pseudo time step: $(pseudo_step+1) \n")
-#             display(plot(norm_diffs[1:pseudo_step], label = "L2 norms diff between iteartion"))
-#             return all_U[1:pseudo_step, :, :], norms[1:pseudo_step], nothing
-#         else
-#             println("Pseudo time step: $pseudo_step, L2 norm diff: ", diff, "\n")
-#             all_U[pseudo_step+1, :, :] = next_U
-#         end
-
-#     end
-#     print("\n Solution not converged, pseudo_dt = $pseudo_dt \n")
-#     display(plot(norm_diffs, label = "L2 norms diff between iteartion"))
-#     where_min = argmin(norms)
-#     return all_U, norms, all_U[where_min, :, :]
-# end
 
 function space_time_solve(U0::Array{Float64, 2}, p::Any; pseudo_dt = 1.0, num_of_pseudo_time_step = 100, diss = false, test = false)
     num_of_cells = n_cells(p[1])

@@ -90,6 +90,11 @@ export
       get_cells,
       match_coords,
       find_FaceInterface,
+      Topology,
+      GeometricTerms,
+      compute_E_phys,
+      compute_FAC_phys,
+      compute_VOL_phys,
 
 # load_mesh
       read_mesh,

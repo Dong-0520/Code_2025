@@ -34,5 +34,6 @@ include("curvilinear.jl")
 include("geometry.jl")
 include("load_mesh.jl")
 include("grid_generators.jl")
+include("curvilinear.jl")
 
 end

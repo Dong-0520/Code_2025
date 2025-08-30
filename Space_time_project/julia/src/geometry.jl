@@ -70,13 +70,14 @@ struct Topology
     face_face_neighbours::Matrix{FaceIndex}
 end
 
-struct GeometricTerms{T <: Real}
+struct GeometricTerms{T}
     J_q::VectorOfArrays{T, 1}       # elem, quad
     Λ_q::VectorOfArrays{T, 3}       # elem, quad, d, d
     J_f::VectorOfArrays{T, 1}       # elem, face_q
     Λ_f::VectorOfArrays{T, 3}       # elem, face_q, d, d
     N_f::VectorOfArrays{T, 2}       # elem, d, face_q
 end
+
 
 struct Grid{dim, C <: AbstractCell, T <: Real}
     cells::Vector{C}

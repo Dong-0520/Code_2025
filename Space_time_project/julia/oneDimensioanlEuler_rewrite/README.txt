@@ -1,0 +1,5 @@
+oneDimensionalEuler 那个文件夹解Euler太乱了
+这里重新整理一下，
+并且尝试用Julia的built-in solver来写
+
+好像之前成功的案例，没有用到dissipation term, 这里直接把所有的dissipation去掉

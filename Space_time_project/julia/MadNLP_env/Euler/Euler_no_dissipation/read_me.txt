@@ -1,0 +1,3 @@
+这个文件夹是最开始的一些例子，跑了一些简单的，没有dissipation term的例子，当然，初始的initial guess条件也会苛刻一些。
+根据2025年八月末的meeting，我们会在另一个文件夹做一些带有dissipation的RHS，先用pseudo transient with strong dissipation
+求解，然后放入optimization solver中

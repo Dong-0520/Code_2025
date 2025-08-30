@@ -1,0 +1,23 @@
+name: PR Checklist Validation
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize]
+
+jobs:
+  checklist:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v2
+
+      - name: Validate PR checklist
+        run: |
+          PR_BODY=$(jq -r .pull_request.body < "$GITHUB_EVENT_PATH")
+          echo "PR Body: $PR_BODY"
+
+          if echo "$PR_BODY" | grep -q '\[ \]'; then
+            echo "All checkboxes should be checked before landing."
+            exit 1
+          fi

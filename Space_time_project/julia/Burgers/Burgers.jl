@@ -1,4 +1,7 @@
-using LinearAlgebra, BlockArrays, SparseArrays
+using Pkg
+
+
+using LinearAlgebra, SparseArrays
 using JLD2
 using Plots
 using DoubleFloats
@@ -12,7 +15,7 @@ using .SBPLite
 include("plotting_helper.jl")
 
 order = 2
-# ref = TriRefElemOmega(order)
+ref = TriRefElemOmega(order)
 # ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 6" => ref)
 
 ref = TriRefElemOmega(order)
