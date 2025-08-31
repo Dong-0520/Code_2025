@@ -1,8 +1,11 @@
 [deps]
 ExaModels = "1037b233-b668-4ce9-9b63-f9f681f55dd2"
+HSL = "34c5aeac-e683-54a6-a0e9-6e0fdc586c50"
 HSL_jll = "017b0a0e-03f4-516a-9b91-836bbd1904dd"
 JuMP = "4076af6c-e467-56ae-b986-b466b2749572"
+LAPACK32_jll = "17f450c3-bd24-55df-bb84-8c51b4b939e3"
 MadNLP = "2621e9c9-9eb4-46b1-8089-e8c72242dfb6"
 MadNLPHSL = "7fb6135f-58fe-4112-84ca-653cf5be0c77"
 NLPModels = "a4795742-8479-5a88-8948-cc11e1c8c1a6"
 OpenBLAS32_jll = "656ef2d0-ae68-5445-9ca0-591084a874a2"
+ReferenceBLAS32_jll = "9e84b91c-71b0-5f24-acdc-49dbe8049396"

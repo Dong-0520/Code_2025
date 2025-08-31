@@ -1,3 +1,5 @@
+print("sss")
+
 include(joinpath(@__DIR__, "local_parameter.jl"))
 include(joinpath(@__DIR__, "../src/parameter.jl"))
 include(joinpath(@__DIR__, "../../src_simpleGrid/SimpleGrid_Euler.jl"))
@@ -268,12 +270,18 @@ end
 p = (newGrid, buffer.smooth_interior_interfaces, buffer.interfaces_aligning_shock, buffer.interfaces_aligning_contact_wave, 
                                 buffer.bottom_faceIndex, buffer.boundary_faceIndex, IC, FBC)
 
+
+analytic_U[[10, 11], :, 1] .= ρstarR
+analytic_U[[12], :, 1] .= ρstarL
+analytic_U[[10,11,12], :, 2] .= ustar
+analytic_U[[10,11,12], :, 3] .= pstar
+
 # 🔥 调用伪瞬态求解
 all_U, diffs, residual_norms, converged = space_time_solve(
     analytic_U,  # 初始解
     p,
     pseudo_dt = 1e-2,
-    num_of_pseudo_time_step = 10000,
+    num_of_pseudo_time_step = 5000,
     vol_diss_factor = 20.0,
     interface_diss_factor = 1.0,
     tolerance = 1e-8,
