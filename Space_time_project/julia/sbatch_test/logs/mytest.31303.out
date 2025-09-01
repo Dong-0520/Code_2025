@@ -1,0 +1,4 @@
+HOST=gpu-pr1-02
+HOME=/work/d336li
+julia version 1.11.3
+Job completed 1

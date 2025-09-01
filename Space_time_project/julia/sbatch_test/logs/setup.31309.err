@@ -1,0 +1,59 @@
+Precompiling Pkg...
+   1782.3 ms  ✓ Logging
+   1878.0 ms  ✓ UUIDs
+   1978.1 ms  ✓ nghttp2_jll
+   1877.7 ms  ✓ MozillaCACerts_jll
+   1981.5 ms  ✓ Zlib_jll
+   2301.9 ms  ✓ NetworkOptions
+   2261.9 ms  ✓ p7zip_jll
+   2237.7 ms  ✓ Unicode
+   2196.6 ms  ✓ MbedTLS_jll
+   2300.4 ms  ✓ Base64
+    895.9 ms  ✓ LibSSH2_jll
+    999.3 ms  ✓ Printf
+   1349.6 ms  ✓ LibCURL_jll
+   1331.1 ms  ✓ LibGit2_jll
+   4677.7 ms  ✓ ArgTools
+   1533.0 ms  ✓ LibCURL
+   1811.4 ms  ✓ Tar
+   6500.0 ms  ✓ Dates
+   7557.0 ms  ✓ Markdown
+   5705.0 ms  ✓ LibGit2
+    782.6 ms  ✓ TOML
+   6678.2 ms  ✓ Downloads
+  76528.1 ms  ✓ Pkg
+  23 dependencies successfully precompiled in 90 seconds
+   Resolving package versions...
+  No Changes to `/mnt/hpc/work/d336li/.julia/environments/v1.11/Project.toml`
+  No Changes to `/mnt/hpc/work/d336li/.julia/environments/v1.11/Manifest.toml`
+  Activating project at `~/Code_2025/Space_time_project/julia/MadNLP_env`
+   Resolving package versions...
+ERROR: LoadError: expected package `HSL_jll [017b0a0e]` to exist at path `/home/d336li/codes/Code_2025/HSL_jll/HSL_jll.jl.v2024.11.28`
+Stacktrace:
+  [1] pkgerror(msg::String)
+    @ Pkg.Types /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Types.jl:68
+  [2] collect_fixed!(env::Pkg.Types.EnvCache, pkgs::Vector{Pkg.Types.PackageSpec}, names::Dict{Base.UUID, String})
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:334
+  [3] resolve_versions!(env::Pkg.Types.EnvCache, registries::Vector{Pkg.Registry.RegistryInstance}, pkgs::Vector{Pkg.Types.PackageSpec}, julia_version::VersionNumber, installed_only::Bool)
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:400
+  [4] targeted_resolve(env::Pkg.Types.EnvCache, registries::Vector{Pkg.Registry.RegistryInstance}, pkgs::Vector{Pkg.Types.PackageSpec}, preserve::Pkg.Types.PreserveLevel, julia_version::VersionNumber)
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:1398
+  [5] tiered_resolve(env::Pkg.Types.EnvCache, registries::Vector{Pkg.Registry.RegistryInstance}, pkgs::Vector{Pkg.Types.PackageSpec}, julia_version::VersionNumber, try_all_installed::Bool)
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:1370
+  [6] _resolve(io::IOContext{IO}, env::Pkg.Types.EnvCache, registries::Vector{Pkg.Registry.RegistryInstance}, pkgs::Vector{Pkg.Types.PackageSpec}, preserve::Pkg.Types.PreserveLevel, julia_version::VersionNumber)
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:1408
+  [7] add(ctx::Pkg.Types.Context, pkgs::Vector{Pkg.Types.PackageSpec}, new_git::Set{Base.UUID}; allow_autoprecomp::Bool, preserve::Pkg.Types.PreserveLevel, platform::Base.BinaryPlatforms.Platform, target::Symbol)
+    @ Pkg.Operations /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:1442
+  [8] add
+    @ /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/Operations.jl:1414 [inlined]
+  [9] add(ctx::Pkg.Types.Context, pkgs::Vector{Pkg.Types.PackageSpec}; preserve::Pkg.Types.PreserveLevel, platform::Base.BinaryPlatforms.Platform, target::Symbol, allow_autoprecomp::Bool, kwargs::@Kwargs{io::IOContext{IO}})
+    @ Pkg.API /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/API.jl:312
+ [10] add(pkgs::Vector{Pkg.Types.PackageSpec}; io::IOContext{IO}, kwargs::@Kwargs{})
+    @ Pkg.API /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/API.jl:159
+ [11] add(pkgs::Vector{Pkg.Types.PackageSpec})
+    @ Pkg.API /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/API.jl:148
+ [12] add(pkgs::Vector{String})
+    @ Pkg.API /mnt/hpc/work/d336li/opt/julia-1.11.3/share/julia/stdlib/v1.11/Pkg/src/API.jl:147
+ [13] top-level scope
+    @ ~/Code_2025/Space_time_project/julia/MadNLP_env/Euler/Euler_with_dissipation/env_set.jl:14
+in expression starting at /work/d336li/Code_2025/Space_time_project/julia/MadNLP_env/Euler/Euler_with_dissipation/env_set.jl:14

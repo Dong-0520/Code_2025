@@ -1,5 +1,5 @@
 
-using Pkg
+# using Pkg
 
 using LinearAlgebra, SparseArrays, Trixi, BlockArrays
 using JLD2
