@@ -5,7 +5,7 @@ gmsh.initialize()
 
 alg_number = 6
 
-name = "Burgers_sin_finer_mesh_005"
+name = "Burgers_sin_finer_mesh_2"
 gmsh.model.add(name)
 
 # 🔥 大幅增加特征长度来减少单元数量
@@ -15,7 +15,7 @@ xL = 0.0
 xR = 0.5
 yB = 0.0
 yT = 0.05
-x_star = 0.26
+x_star = 0.15
 a = 0.0
 
 # 添加点

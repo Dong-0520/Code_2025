@@ -17,13 +17,13 @@ include("../../../src/SBPLite.jl")
 # include(joinpath(@__DIR__, "..//plot_helper.jl"))
 using .SBPLite
 
-order = 2
+order = 1
 ref = TriangleDiagELG(order, 2 * order)
 ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 
-# grid = read_mesh(joinpath(@__DIR__, "Burgers_sin_finer_mesh_005.msh"), ref_elems_data, identity)
-# @save joinpath(@__DIR__, "Burgers_sin_mesh2_2_005.jld2") grid
-@load joinpath(@__DIR__, "Burgers_sin_mesh2_2_005.jld2") grid
+grid = read_mesh(joinpath(@__DIR__, "Burgers_sin_finer_mesh_2.msh"), ref_elems_data, identity)
+@save joinpath(@__DIR__, "Burgers_sin_finer_mesh_2.jld2") grid
+@load joinpath(@__DIR__, "Burgers_sin_finer_mesh_1.jld2") grid
 # ax, at = 1.0, 1.0
 # bottomBC1(x::Coord) = -1
 # bottomBC2(x::Coord) = 1
@@ -40,44 +40,30 @@ rightBC(x::Coord) = 0
 using Roots
 
 
+# 🔥 替换你的 solve_single_point 函数为这个：
+
+# 既支持 Float64 也支持 ForwardDiff.Dual 类型
 function solve_single_point(x::T1, t::T2) where {T1<:Real, T2<:Real}
-    # 提升到公共类型
     T = promote_type(T1, T2)
     x_T, t_T = T(x), T(t)
-    
-    # 对于 ForwardDiff.Dual 类型，使用迭代方法
-    if T <: ForwardDiff.Dual
-        # 使用牛顿法的几次迭代来求解 u - sin(4π*x - 4π*u*t) = 0
-        u = sin(4π * x_T)  # 初始猜测
-        for _ in 1:5  # 几次牛顿迭代
-            f_val = u - sin(4π * x_T - 4π * u * t_T)
-            df_du = 1 + 4π * t_T * cos(4π * x_T - 4π * u * t_T)
-            u = u - f_val / df_du
-        end
-        return u
-    else
-        # 对于常规 Float64，使用数值求根
-        F(u) = u - sin(4π * x_T - 4π * u * t_T)
+    F(u) = u - sin(4π * x_T - 4π * u * t_T)
+    try
         return find_zero(F, (T(-1.0), T(1.0)), Roots.Bisection(), atol=1e-10)
+    catch
+        return sin(4π * x_T)
     end
 end
 
-function solve_single_point(x::T, t::T) where {T<:Real}
-    return solve_single_point(x, t)  # 调用混合类型版本
-end
-
-# 🔥 修复：处理向量输入时的类型问题
-function solve_u(xs::Vector{T}, t::Real) where {T<:Real}
+# 支持向量输入
+function solve_u(xs::AbstractVector, t)
     return [solve_single_point(x, t) for x in xs]
 end
 
-# 🔥 修复：处理字典输入
-function solve_u(xs_dict::Dict, t::Real)
-    U = Dict()  
-    for cell_id in collect(keys(xs_dict))
-        xs = xs_dict[cell_id]
-        temp_U = solve_u(xs, t)  # 使用向量版本
-        U[cell_id] = temp_U
+# 支持字典输入
+function solve_u(xs_dict::Dict, t)
+    U = Dict()
+    for (cell_id, xs) in xs_dict
+        U[cell_id] = solve_u(xs, t)
     end
     return U
 end
@@ -101,7 +87,7 @@ end
 top_bc_before_opt = solve_u(x_coords, 0.15)
 
 
-scatter([0.276664, 0.339202, 0.420798, 0.483336, 0.0180523, 0.0858025, 0.174198, 0.241948], [-0.999787, -0.829517, -0.434413, -0.0927345, 0.100451, 0.469295, 0.882174, 0.968175])
+# scatter([0.276664, 0.339202, 0.420798, 0.483336, 0.0180523, 0.0858025, 0.174198, 0.241948], [-0.999787, -0.829517, -0.434413, -0.0927345, 0.100451, 0.469295, 0.882174, 0.968175])
 
 Pkg.activate("MadNLP_env")
 
@@ -292,11 +278,11 @@ include(joinpath(@__DIR__, "../plot_helper_grid.jl"))
 # plot_u_interactive(grid, reshape(u0_vec, size(U0_for_solver)))
 plot_u_interactive(grid, oscillating_u)
 plot_mesh(grid)
-@save joinpath(@__DIR__, "oscillating_solution_sin_2coords_005.jld2") oscillating_u grid
+# @save joinpath(@__DIR__, "oscillating_solution_sin_2coords_005.jld2") oscillating_u grid
 
 
 using JuMP, MadNLP, Random, MadNLPHSL
-@load joinpath(@__DIR__, "oscillating_solution_sin_2coords_005.jld2") oscillating_u grid
+# @load joinpath(@__DIR__, "oscillating_solution_sin_2coords_005.jld2") oscillating_u grid
 
 include(joinpath(@__DIR__, "../../src_simpleGrid/SimpleGrid.jl"))
 
@@ -378,7 +364,7 @@ function RHS_for_solution(du, u, para)
         u_adj = solve_u(x_coords, 0.1)
 
         # result[cell_id, :] += (grid.FAC[cell_id][face_id] * Diagonal(Ntγ) * (u_face .- u_adj))
-        du[cell_id, :] += ref.H_inv * Matrix(R)' * ref.H_face * Diagonal(Ntγ) * (u_face .- u_adj)
+        du[cell_id, :] += 0.5 * ref.H_inv * Matrix(R)' * ref.H_face * Diagonal(Ntγ) * (u_face .- u_adj)
     end
 
     for (cell_id, face_id) in grid.face_sets["LEFT_INFLOW"]
@@ -431,7 +417,7 @@ function wrap_up_results(buffer; num_of_nodes = length(grid.xyz_gmsh))
 
 end
 
-
+Weight = Diagonal([0.25, 0.25, 0.25, 0.25, 0.25, 0.25, 0.1])
 function pde_model_with_solver_struct(buffer::SpaceTimeBuffer, bottom_bc::Dict; lin_solver = MadNLPHSL.Ma57Solver, 
                                                                 αmesh = 1.0, αshk = 1.0, max_iter = 100)
     # model = Model(() -> MadNLP.Optimizer(
@@ -445,17 +431,11 @@ function pde_model_with_solver_struct(buffer::SpaceTimeBuffer, bottom_bc::Dict; 
         max_iter=max_iter,                       # 减少最大迭代次数
         
         # 🔥 更严格的收敛条件
-        tol=1e-12,                          # 主要容差（从1e-8改为1e-12）
-        dual_inf_tol=1e-12,                 # 对偶不可行性容差
-        constr_viol_tol=1e-12,              # 约束违反容差
-        compl_inf_tol=1e-12,                # 互补性容差
+        tol=1e-9,                          # 主要容差（从1e-8改为1e-12）
         
         # 🔥 禁用可接受解机制，强制达到严格收敛
-        acceptable_tol=1e-14,               # 设置比主容差更严格
+        acceptable_tol=1e-9,               # 设置比主容差更严格
         acceptable_iter=0,                  # 禁用可接受解
-        acceptable_dual_inf_tol=1e-14,
-        acceptable_constr_viol_tol=1e-14,
-        acceptable_compl_inf_tol=1e-14,
         ))
     
 
@@ -491,6 +471,11 @@ function pde_model_with_solver_struct(buffer::SpaceTimeBuffer, bottom_bc::Dict; 
         error("The length of u0_vec must be equal to n_total")
     end
     @variable(model, u[i=1:n_total], start = u0_vec[i])
+
+    @NLconstraint(model, u[1] >= 0.24)
+    @NLconstraint(model, u[1] <= 0.26)
+    @NLconstraint(model, u[2] >= 0.24)
+    @NLconstraint(model, u[2] <= 0.26)
 
 
     # PDE 残差作为等式约束
@@ -570,16 +555,21 @@ function pde_model_with_solver_struct(buffer::SpaceTimeBuffer, bottom_bc::Dict; 
         r_shk = zeros(T, num_of_element)
         Umatrix = reshape(u_vec, (num_of_element, num_of_nodes))
         for cell_id in 1:num_of_element
-            num_uk = Umatrix[cell_id, :]
-            quadrature_k = current_grid.geometric_terms.J_q[cell_id] .* diag(ref.H)
-            area_K = area_of_ref_elem * current_grid.geometric_terms.J_q[cell_id][1]
-            num_̄uk = sum(quadrature_k .* num_uk) / area_K
-            if cell_id in [3, 4, 5]
-                r_shk[cell_id] = 10 * sum((num_uk .- num_̄uk).^2 .* quadrature_k) / area_K  # 计算 shock tracking residual
+            # uK = Umatrix[cell_id, :]                         # 节点/求积分点上的解值（若非同点需插值）
+            # wJ = current_grid.geometric_terms.J_q[cell_id] .* diag(ref.H)  # 每点的 w_i * J_i
+            # area_K = sum(wJ)                                 # 正确的物理单元测度 |K|
+            # ubar = sum(wJ .* uK) / area_K                    # 以同一权重计算单元均值
+            # r_shk[cell_id] = sum((uK .- ubar).^2 .* wJ) / area_K  
+            
+            uK = Umatrix[cell_id, :]                         # 节点/求积分点上的解值（若非同点需插值）
+            ubar = sum(uK) / length(uK)                   # 以同一权重计算单元均值
+            if cell_id in []
+                r_shk[cell_id] = 3 * (uK .- ubar)' * Weight * (uK .- ubar)
             else
-                r_shk[cell_id] = sum((num_uk .- num_̄uk).^2 .* quadrature_k) / area_K
+                # r_shk[cell_id] = (uK .- ubar)' * Weight * (uK .- ubar)
+                r_shk[cell_id] = (uK .- ubar)' * (uK .- ubar)
             end
-            # r_shk[cell_id] = sum((num_uk .- num_̄uk).^2 .* quadrature_k)
+
         end
 
         return αmesh * sum(r_mesh.^2) + αshk * sum(r_shk.^2)
@@ -658,13 +648,109 @@ end
 buffer = SpaceTimeBuffer(grid, [0.0, 1.0], oscillating_u)
 buffer.indices_moving_coords = [2, 3]
 buffer.indices_moving_coords
-model1 = pde_model_with_solver_struct(buffer, Dict(), αmesh = 5, αshk = 100000, max_iter = 1000, lin_solver = MadNLPHSL.Ma27Solver)
+model1 = pde_model_with_solver_struct(buffer, Dict(), αmesh = 100, αshk = 1000, max_iter = 300, lin_solver = MadNLPHSL.Ma57Solver)
 
-using Plots
-include(joinpath(@__DIR__, "../plot_helper_simple_grid.jl"))
+# using Plots
+# include(joinpath(@__DIR__, "../plot_helper_simple_grid.jl"))
 final_simple_grid, final_u = wrap_up_results(buffer)
 plot_u_interactive(final_simple_grid, final_u)
 plot_mesh(final_simple_grid)
+
+
+du = zeros(Float64, size(oscillating_u))
+RHS_for_solution(du, final_u, (final_simple_grid, 1.0, Dict()))
+
+union(final_simple_grid.face_sets["BOTTOM_INFLOW_1"], final_simple_grid.face_sets["BOTTOM_INFLOW_2"])
+cell_id, face_id = FaceIndex((5, 1))
+R = ref.R[face_id]
+mask = @views ref.f_mask[face_id]
+normal = grid.geometric_terms.N_f[cell_id][:, mask]
+# Nxγ = normal[1, :]
+Ntγ = normal[2, :]
+
+u_face = R * final_u[cell_id, :]
+# u_adj = bottom_bc[cell_id]
+x_coords = map(x -> x[1], R * final_simple_grid.xyz_SBP[cell_id])
+u_adj = solve_u(x_coords, 0.1)
+ref.H_inv * Matrix(R)' * ref.H_face * Diagonal(Ntγ) * (u_face .- u_adj)
+
+
+
+# volume discretization
+for cell_id in 1:length(final_simple_grid.cells)
+    J_k = Diagonal(final_simple_grid.geometric_terms.J_q[cell_id])
+
+    Dx = final_simple_grid.VOL[cell_id][1]
+    Dt = final_simple_grid.VOL[cell_id][2]
+    
+
+    local_sol = final_u[cell_id, :]
+    ux = 1/3 * Dx * (local_sol .^ 2) .+ 1/3 * local_sol .* (Dx * local_sol)
+    ut = Dt * local_sol 
+
+    # result[cell_id, :] = (-ux .- ut)
+    du[cell_id, :] = J_k * (-ux .- ut)
+end
+
+for i in 1:length(final_simple_grid.face_interfaces)
+    interface = final_simple_grid.face_interfaces[i]
+    ck, lfγk = interface.face_1
+    cv, lfγv = interface.face_2
+    Pk, Pv = interface.P1, interface.P2
+    # refk = grid.cells[ck].ref_data[]
+    # refv = grid.cells[cv].ref_data[]
+    Rγk, Rγv = Matrix(ref.R[lfγk]), Matrix(ref.R[lfγv])
+
+    uk, uv = final_u[ck, :], final_u[cv, :]
+    uk_face, uv_face = Rγk * uk, Rγv * uv
+    uk_adj, uv_adj = uv_face[Pv], uk_face[Pk]
+
+    # normal vector of physical element
+    maskγk, maskγv = @views ref.f_mask[lfγk], ref.f_mask[lfγv]
+    normalγk, normalγv = @views final_simple_grid.geometric_terms.N_f[ck][:, maskγk], final_simple_grid.geometric_terms.N_f[cv][:, maskγv]
+    Nxγk, Ntγk = normalγk[1, :], normalγk[2, :]
+    Nxγv, Ntγv = normalγv[1, :], normalγv[2, :]
+
+
+    # 替代布尔判断的代码
+    indicator = Nxγk .* (uk_face - uk_adj)
+    spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)) .* (indicator .< 0)
+    # spatial_flux_k = (uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6
+    # spatial_flux_k = (uk_face.^2 + uk_adj.^2) ./ 4 .* (indicator .>= 0) + ((uk_face.^2 + uk_face .* uk_adj + uk_adj.^2) ./ 6 ) .* (indicator .< 0) .+ mysign.(Nxγk) .* max.(abs.(uk_face), abs.(uk_adj)) .* (uk_face .- uk_adj)
+
+    # 同样的逻辑适用于 spatial_flux_v
+    # indicator_v = Nxγv .* (uv_face - uv_adj)
+    # spatial_flux_v = (uv_face.^2 + uv_adj.^2) ./ 4 .* (indicator_v .>= 0) + ((uv_face.^2 + uv_face .* uv_adj + uv_adj.^2) ./ 6 .+ mysign.(Nxγv) .* max.(abs.(uv_face), abs.(uv_adj)) .* (uv_face .- uv_adj)) .* (indicator_v .< 0)
+
+    rk_spatial = ref.H_inv * Matrix(Rγk)' * ref.H_face *  Diagonal(Nxγk) * (0.5 .* uk_face.^2 .- spatial_flux_k)
+    rv_spatial = ref.H_inv * Matrix(Rγv)' * ref.H_face * Diagonal(Nxγv) * (0.5 .* uv_face.^2 .- spatial_flux_k[Pk])
+
+
+    rk_temporal = ref.H_inv * Matrix(Rγk)' * ref.H_face * Diagonal(Ntγk) * (0.5 .* uk_face .- 0.5 .* uk_adj)
+    rv_temporal = ref.H_inv * Matrix(Rγv)' * ref.H_face * Diagonal(Ntγv) * (0.5 .* uv_face .- 0.5 .* uv_adj)
+
+    # result[ck, :] += ( rk_spatial .+ rk_temporal )
+    # result[cv, :] += ( rv_spatial .+ rv_temporal )
+    du[ck, :] += ( rk_spatial .+ rk_temporal )
+    du[cv, :] += ( rv_spatial .+ rv_temporal )
+end
+
+for (cell_id, face_id) in union(final_simple_grid.face_sets["BOTTOM_INFLOW_1"], final_simple_grid.face_sets["BOTTOM_INFLOW_2"])
+    R = ref.R[face_id]
+    mask = @views ref.f_mask[face_id]
+    normal = final_simple_grid.geometric_terms.N_f[cell_id][:, mask]
+    # Nxγ = normal[1, :]
+    Ntγ = normal[2, :]
+
+    u_face = R * final_u[cell_id, :]
+    # u_adj = bottom_bc[cell_id]
+    x_coords = map(x -> x[1], R * final_simple_grid.xyz_SBP[cell_id])
+    u_adj = solve_u(x_coords, 0.1)
+
+    # result[cell_id, :] += (grid.FAC[cell_id][face_id] * Diagonal(Ntγ) * (u_face .- u_adj))
+    du[cell_id, :] += 0.5 * ref.H_inv * Matrix(R)' * ref.H_face * Diagonal(Ntγ) * (u_face .- u_adj)
+end
+
 
 @save joinpath(@__DIR__, "../optimization_results//buffer_two_coordinates_sin_problem_005.jld2") buffer final_simple_grid final_u
 
