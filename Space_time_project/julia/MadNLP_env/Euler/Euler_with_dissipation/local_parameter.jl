@@ -1,5 +1,5 @@
 
-using Pkg
+# using Pkg
 
 using LinearAlgebra, SparseArrays, Trixi, BlockArrays
 using JLD2
@@ -23,6 +23,8 @@ order = 1
 ref = TriangleDiagELG(order, 2 * order)
 ref_elems_data = Dict{String, SBPLite.RefElemData}("Triangle 3" => ref)
 println("Reading mesh... \n")
-grid = read_mesh(joinpath(@__DIR__, "Euler_grid_2_nonalign.msh"), ref_elems_data, Base.identity)
+# grid = read_mesh(joinpath(@__DIR__, "Euler_grid_10_nonalign.msh"), ref_elems_data, Base.identity)
 # @load joinpath(@__DIR__, "grid_nonalign_order1.jld2") grid
+
+# grid = read_mesh(joinpath(@__DIR__, "Euler_grid_2_nonalign.msh"), ref_elems_data, Base.identity)
 println("Mesh read done. \n")
