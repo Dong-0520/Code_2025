@@ -1,0 +1,26 @@
+WARNING: using NLsolve.converged in module Main conflicts with an existing identifier.
+  Activating project at `~/Code_2025/Space_time_project/julia/MadNLP_env`
+┌ Warning: Replacing docs for `Main.SBPLite.metric_terms_optimised :: Union{Tuple{T}, Tuple{Main.SBPLite.PolynomialCurvilinearMapping{3, T}, Array{SVector{3, T}, 1}, Array{T}, Matrix{T}, Matrix{T}}} where T` in module `Main.SBPLite`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `Main.SBPLite.bernstein_basis :: Union{Tuple{T}, Tuple{N}, Tuple{SVector{N, T}, Int64}} where {N, T}` in module `Main.SBPLite`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `Main.SBPLite.polyval_bernstein :: Union{Tuple{T2}, Tuple{T1}, Tuple{N}, Tuple{SVector{N, T1}, Union{Array{Vector{T2}, 1}, NTuple{N, Vector{T2}}}, Any}} where {N, T1, T2}` in module `Main.SBPLite`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `Main.SBPLite.monomial_basis :: Union{Tuple{T}, Tuple{N}, Tuple{Union{Vector{T}, NTuple{N, T}, SVector{N, T}}, Int64}} where {N, T}` in module `Main.SBPLite`
+└ @ Base.Docs docs/Docs.jl:243
+┌ Warning: Replacing docs for `Main.SBPLite.polyval_monomial :: Union{Tuple{N}, Tuple{T2}, Tuple{T1}, Tuple{SVector{N, T1}, Union{Array{Vector{T2}, 1}, NTuple{N, Vector{T2}}}}} where {T1, T2, N}` in module `Main.SBPLite`
+└ @ Base.Docs docs/Docs.jl:243
+[ Info: Extracting elems and computing mappings...
+0.0%┣                                               ┫ 0/12 [00:00<00:00, -0s/it]
+[1A8.3%┣███▋                                       ┫ 1/12 [00:01<Inf:Inf, InfGs/it]
+[1A100.0%┣████████████████████████████████████████████┫ 12/12 [00:01<00:00, 14it/s]
+[1A100.0%┣████████████████████████████████████████████┫ 12/12 [00:01<00:00, 14it/s]
+[ Info: Setting up grid...
+8.3%┣███▋                                       ┫ 1/12 [00:00<Inf:Inf, InfGs/it]
+[1A16.7%┣███████▉                                       ┫ 2/12 [00:03<00:31, 3s/it]
+[1A100.0%┣█████████████████████████████████████████████┫ 12/12 [00:03<00:00, 4it/s]
+[ Info: Computing grid topology...
+0.0%┣                                               ┫ 0/12 [00:00<00:00, -0s/it]
+[1A8.3%┣███▋                                       ┫ 1/12 [00:00<Inf:Inf, InfGs/it]
+[1A100.0%┣███████████████████████████████████████████┫ 12/12 [00:00<00:00, 137it/s]
+[1A100.0%┣███████████████████████████████████████████┫ 12/12 [00:00<00:00, 137it/s]
